@@ -7,3 +7,5 @@ riderModule.iml
 BccCode.I18N.SourceGen/packages/
 BccCode.I18N.SourceGen/artifacts/
 .runlogs/
+/artifacts-local/
+/artifacts/

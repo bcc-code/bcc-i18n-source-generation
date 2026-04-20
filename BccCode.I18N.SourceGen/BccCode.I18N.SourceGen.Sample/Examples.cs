@@ -28,21 +28,21 @@ public class Examples
             Language.plural.banana(0),
             Language.plural.banana(1),
             Language.plural.banana(2),
-            
+
             LanguageKeys.message.hello1,
             LanguageKeys.message.hello2,
-            
+
             LanguageStrings.GetString("message.hello1"),
             LanguageStrings.GetString("message.hello2")
         ];
-        
+
         foreach (var item in text)
         {
             Console.WriteLine(item);
         }
         Console.WriteLine("\n\n");
     }
-    
+
     public static void Main()
     {
         TestLanguage("no");

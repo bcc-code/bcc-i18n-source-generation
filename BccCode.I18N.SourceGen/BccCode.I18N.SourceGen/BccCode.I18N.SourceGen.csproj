@@ -22,6 +22,7 @@
     <ItemGroup>
         <!-- Ship the .props file alongside the analyzer so consumers get CompilerVisibleProperty automatically -->
         <None Include="build\BccCode.I18N.SourceGen.props" Pack="true" PackagePath="build\" />
+        <None Include="..\..\Readme.md" Pack="true" PackagePath="\" />
         <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
         <!-- Pack only the explicit generator runtime dependencies needed beyond the compiler host. -->
         <!-- Todo: is this the correct approach? -->
@@ -42,12 +43,6 @@
         </PackageReference>
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.0" PrivateAssets="all" />
         <PackageReference Include="System.Text.Json" Version="9.0.15" PrivateAssets="all" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <Content Include="..\..\Readme.md">
-        <Link>Readme.md</Link>
-      </Content>
     </ItemGroup>
 
 

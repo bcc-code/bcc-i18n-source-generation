@@ -2,7 +2,7 @@
 	<s:String x:Key="/Default/Environment/UnitTesting/UnitTestSessionStore/Sessions/=f81fc11d_002D5529_002D4de2_002D968c_002D8fa18e42e4a1/@EntryIndexedValue">&lt;SessionState ContinuousTestingMode="0" IsActive="True" Name="All tests from &amp;lt;BccCode.I18N.SourceGen.Tests&amp;gt;" xmlns="urn:schemas-jetbrains-com:jetbrains-ut-session"&gt;&#xD;
   &lt;Solution /&gt;&#xD;
 &lt;/SessionState&gt;</s:String>
-	<s:Boolean x:Key="/Default/UnloadedProject/UnloadedProjects/=4140e778_002D29c3_002Dc8b7_002D6d92_002D0a23098b2efb_0023BccCode_002EI18N_002ESourceGen_002ENuGetIntegrationTests/@EntryIndexedValue">True</s:Boolean>
+	
 	
 	
 	</wpf:ResourceDictionary>

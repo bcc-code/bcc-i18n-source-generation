@@ -10,10 +10,10 @@ public class GeneratedApiIntegrationTests
     {
         CultureInfo.CurrentUICulture = new CultureInfo("en");
 
-        Assert.Equal("hello world", IntegrationTests.Language.message.hello1);
-        Assert.Equal("hello world", IntegrationTests.LanguageStrings.GetString(LanguageKeys.message.hello1));
-        Assert.Equal("message.hello2", IntegrationTests.LanguageKeys.message.hello2);
-        Assert.Equal("one apple", IntegrationTests.Language.plural.apple(1));
+        Assert.Equal("hello world", Language.message.hello1);
+        Assert.Equal("hello world", LanguageStrings.GetString(LanguageKeys.message.hello1));
+        Assert.Equal("message.hello2", LanguageKeys.message.hello2);
+        Assert.Equal("one apple", Language.plural.apple(1));
     }
 
     [Fact]
