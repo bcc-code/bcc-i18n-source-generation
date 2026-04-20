@@ -6,7 +6,7 @@ A Roslyn incremental source generator that reads JSON translation files (additio
 
 ## How It Works
 
-Add your translation files as `AdditionalFiles` in your `.csproj`. The generator uses `no.json` as the base/default language (Norwegian fallback) and any other `.json` files (e.g. `en.json`) as additional locales.
+Add your translation files as `AdditionalFiles` in your `.csproj`. The generator uses `no.json` as the base/default language (English fallback) and any other `.json` files (e.g. `en.json`) as additional locales.
 
 The JSON files can contain nested objects (mapped to nested static classes) and string values (mapped to properties or constants). Strings support:
 
@@ -21,14 +21,14 @@ The generator produces three generated classes from the same JSON translation pi
 
 Generated file: `Language.g.cs`
 
-A strongly-typed static class that mirrors the structure of your JSON files. Each key becomes a `static string` property or method that returns the correct translation for `CultureInfo.CurrentUICulture` at runtime, falling back to Norwegian (`no`) if the current culture is not available.
+A strongly-typed static class that mirrors the structure of your JSON files. Each key becomes a `static string` property or method that returns the correct translation for `CultureInfo.CurrentUICulture` at runtime, falling back to English (`en`) if the current culture is not available.
 
-Example — given `no.json`:
+Example — given `en.json`:
 
 ```json
 {
-  "message": { "hello": "Hei verden" },
-  "plural": { "car": "bil | biler" }
+  "message": { "hello": "hello world" },
+  "plural": { "car": "car | cars" }
 }
 ```
 
@@ -36,30 +36,30 @@ Usage:
 
 ```csharp
 string greeting = Language.message.hello;         // plain string
-string cars = Language.plural.car(3);             // pluralized: "biler"
+string cars = Language.plural.car(3);             // pluralized: "cars"
 ```
 
-### `I18N` (I18NLanguageKeyGenerator)
+### `LanguageKeys` (I18NLanguageKeyGenerator)
 
-Generated file: `I18N.g.cs`
+Generated file: `LanguageKeys.g.cs`
 
-A static class of `const string` keys that mirror the JSON structure. Useful for passing keys to `I18NStrings.GetString()` or for use with external i18n frameworks.
+A static class of `const string` keys that mirror the JSON structure. Useful for returning keys to the frontend in an API response.
 
 Example:
 
 ```csharp
-string key = I18N.message.hello; // == "message.hello"
+string key = LanguageKeys.message.hello; // == "message.hello"
 ```
 
-### `I18NStrings` (I18NLanguageDictGenerator)
+### `LanguageStrings` (I18NLanguageDictGenerator)
 
-Generated file: `I18NStrings.g.cs`
+Generated file: `LanguageStrings.g.cs`
 
 A static class that holds all translations in a `Dictionary<string, Dictionary<string, string>>` (keyed by two-letter ISO language code and then by dot-separated key path). Exposes two lookup methods:
 
 ```csharp
-string value = I18NStrings.GetString("message.hello");      // returns key if not found
-string? value = I18NStrings.GetStringOrNull("message.hello"); // returns null if not found
+string value = LanguageStrings.GetString("message.hello");      // returns key if not found
+string? value = LanguageStrings.GetStringOrNull("message.hello"); // returns null if not found
 ```
 
 ## How To?
@@ -77,17 +77,29 @@ In your `.csproj`, include JSON files as `AdditionalFiles`:
 
 ### How to configure the fallback language
 
-By default the fallback language is Norwegian (`no`). You can change this by setting `FallbackLanguage` in your `.csproj`:
+By default the fallback language is English (`en`). You can change this by setting `FallbackLanguage` in your `.csproj`:
 
 ```xml
 <PropertyGroup>
-  <FallbackLanguage>en</FallbackLanguage>
+  <FallbackLanguage>no</FallbackLanguage>
 </PropertyGroup>
 ```
 
-The value must match the filename of one of your translation JSON files (without the `.json` extension). All three generated classes — `Language`, `I18N`, and `I18NStrings` — will use this language as the default when no matching translation is found for `CultureInfo.CurrentUICulture`.
+The value must match the filename of one of your translation JSON files (without the `.json` extension). All three generated classes — `Language`, `LanguageKeys`, and `LanguageStrings` — will use this language as the default when no matching translation is found for `CultureInfo.CurrentUICulture`.
 
-> **Note for project references:** When referencing the generator as a `ProjectReference` (rather than via NuGet), import the props file manually so `FallbackLanguage` is visible to the analyzer:
+### How to configure the generated namespace
+
+The generated classes default to the consuming project's `RootNamespace`. You can override that with `GeneratedNamespace`:
+
+```xml
+<PropertyGroup>
+  <GeneratedNamespace>MyApp.Localization</GeneratedNamespace>
+</PropertyGroup>
+```
+
+With that configuration, the generator emits `MyApp.Localization.Language`, `MyApp.Localization.Language`, and `MyApp.Localization.LanguageStrings` instead of generating them in the global namespace.
+
+> **Note for project references:** When referencing the generator as a `ProjectReference` (rather than via NuGet), import the props file manually so `FallbackLanguage` and `GeneratedNamespace` are visible to the analyzer:
 >
 > ```xml
 > <Import Project="..\BccCode.I18N.SourceGen\build\BccCode.I18N.SourceGen.props" />
@@ -115,9 +127,11 @@ dotnet test .\BccCode.I18N.SourceGen.IntegrationTests\BccCode.I18N.SourceGen.Int
 
 dotnet pack .\BccCode.I18N.SourceGen\BccCode.I18N.SourceGen.csproj -c Release -o .\artifacts
 
-dotnet restore .\BccCode.I18N.SourceGen.NuGetIntegrationTests\BccCode.I18N.SourceGen.NuGetIntegrationTests.csproj --packages .\packages --configfile .\nuget.integration-tests.config
+Remove-Item .\packages -Recurse -Force -ErrorAction SilentlyContinue
+dotnet restore .\BccCode.I18N.SourceGen.NuGetIntegrationTests\BccCode.I18N.SourceGen.NuGetIntegrationTests.csproj --packages .\packages --configfile .\nuget.integration-tests.config --force
 dotnet build .\BccCode.I18N.SourceGen.NuGetIntegrationTests\BccCode.I18N.SourceGen.NuGetIntegrationTests.csproj -c Release --packages .\packages --no-restore
 dotnet test .\BccCode.I18N.SourceGen.NuGetIntegrationTests\BccCode.I18N.SourceGen.NuGetIntegrationTests.csproj -c Release --no-build --no-restore
 ```
 
 This mirrors the source-generator publishing flow described by Andrew Lock: first verify compiler integration through an analyzer-style project reference, then verify the actual packed analyzer from a local NuGet source without polluting the machine-wide NuGet cache.
+Clearing the local `packages` folder before restore is important when reusing the same package version locally, otherwise NuGet can keep an older packed analyzer and stale build props.

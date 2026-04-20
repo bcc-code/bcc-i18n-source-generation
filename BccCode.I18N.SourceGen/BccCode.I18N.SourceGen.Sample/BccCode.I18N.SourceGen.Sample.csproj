@@ -8,6 +8,7 @@
         <Nullable>enable</Nullable>
         <RootNamespace>BccCode.I18N.SourceGen.Sample</RootNamespace>
         <FallbackLanguage>en</FallbackLanguage>
+        <GeneratedNamespace>BccCode.I18N.SourceGen.Generated</GeneratedNamespace>
     </PropertyGroup>
 
     <ItemGroup>

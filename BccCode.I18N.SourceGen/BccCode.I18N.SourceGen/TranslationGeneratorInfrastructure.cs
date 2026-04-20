@@ -17,7 +17,40 @@ namespace BccCode.I18N.SourceGen;
 
 internal static class TranslationGeneratorDefaults
 {
-    public const string DefaultFallbackLanguage = "no";
+    public const string DefaultFallbackLanguage = "en";
+}
+
+internal readonly struct TranslationGeneratorOptions : IEquatable<TranslationGeneratorOptions>
+{
+    public TranslationGeneratorOptions(string fallbackLanguage, string generatedNamespace)
+    {
+        FallbackLanguage = string.IsNullOrWhiteSpace(fallbackLanguage)
+            ? TranslationGeneratorDefaults.DefaultFallbackLanguage
+            : fallbackLanguage.Trim().ToLowerInvariant();
+        GeneratedNamespace = generatedNamespace?.Trim() ?? string.Empty;
+    }
+
+    public string FallbackLanguage { get; }
+
+    public string GeneratedNamespace { get; }
+
+    public bool HasGeneratedNamespace => !string.IsNullOrWhiteSpace(GeneratedNamespace);
+
+    public bool Equals(TranslationGeneratorOptions other) =>
+        string.Equals(FallbackLanguage, other.FallbackLanguage, StringComparison.Ordinal) &&
+        string.Equals(GeneratedNamespace, other.GeneratedNamespace, StringComparison.Ordinal);
+
+    public override bool Equals(object? obj) => obj is TranslationGeneratorOptions other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        unchecked
+        {
+            var hashCode = FallbackLanguage != null ? StringComparer.Ordinal.GetHashCode(FallbackLanguage) : 0;
+            hashCode = (hashCode * 397) ^ (GeneratedNamespace != null ? StringComparer.Ordinal.GetHashCode(GeneratedNamespace) : 0);
+            return hashCode;
+        }
+    }
 }
 
 internal static class TranslationGeneratorTrackingNames
@@ -310,20 +343,26 @@ internal readonly struct LanguageFileParseResult : IEquatable<LanguageFileParseR
 internal readonly struct TranslationModelSet : IEquatable<TranslationModelSet>
 {
     public TranslationModelSet(
-        string fallbackLanguage,
+        TranslationGeneratorOptions options,
         EquatableArray<LanguageFileModel> files,
         EquatableArray<GeneratorDiagnosticInfo> diagnostics,
         bool hasFallbackFile,
         LanguageFileModel fallbackFile)
     {
-        FallbackLanguage = fallbackLanguage ?? TranslationGeneratorDefaults.DefaultFallbackLanguage;
+        Options = options;
         Files = files;
         Diagnostics = diagnostics;
         HasFallbackFile = hasFallbackFile;
         FallbackFile = fallbackFile;
     }
 
-    public string FallbackLanguage { get; }
+    public TranslationGeneratorOptions Options { get; }
+
+    public string FallbackLanguage => Options.FallbackLanguage;
+
+    public string GeneratedNamespace => Options.GeneratedNamespace;
+
+    public bool HasGeneratedNamespace => Options.HasGeneratedNamespace;
 
     public EquatableArray<LanguageFileModel> Files { get; }
 
@@ -334,7 +373,7 @@ internal readonly struct TranslationModelSet : IEquatable<TranslationModelSet>
     public LanguageFileModel FallbackFile { get; }
 
     public bool Equals(TranslationModelSet other) =>
-        string.Equals(FallbackLanguage, other.FallbackLanguage, StringComparison.Ordinal) &&
+        Options.Equals(other.Options) &&
         Files.Equals(other.Files) &&
         Diagnostics.Equals(other.Diagnostics) &&
         HasFallbackFile == other.HasFallbackFile &&
@@ -346,7 +385,7 @@ internal readonly struct TranslationModelSet : IEquatable<TranslationModelSet>
     {
         unchecked
         {
-            var hashCode = FallbackLanguage != null ? StringComparer.Ordinal.GetHashCode(FallbackLanguage) : 0;
+            var hashCode = Options.GetHashCode();
             hashCode = (hashCode * 397) ^ Files.GetHashCode();
             hashCode = (hashCode * 397) ^ Diagnostics.GetHashCode();
             hashCode = (hashCode * 397) ^ HasFallbackFile.GetHashCode();
@@ -358,9 +397,9 @@ internal readonly struct TranslationModelSet : IEquatable<TranslationModelSet>
 
 internal static class TranslationModelSetFactory
 {
-    public static TranslationModelSet Create(ImmutableArray<LanguageFileParseResult> parseResults, string fallbackLanguage)
+    public static TranslationModelSet Create(ImmutableArray<LanguageFileParseResult> parseResults, TranslationGeneratorOptions options)
     {
-        var normalizedFallbackLanguage = NormalizeLanguage(fallbackLanguage);
+        var normalizedFallbackLanguage = NormalizeLanguage(options.FallbackLanguage);
         var diagnosticBuilder = ImmutableArray.CreateBuilder<GeneratorDiagnosticInfo>();
         var validFiles = new List<LanguageFileModel>();
 
@@ -419,7 +458,7 @@ internal static class TranslationModelSetFactory
         }
 
         return new TranslationModelSet(
-            normalizedFallbackLanguage,
+            new TranslationGeneratorOptions(normalizedFallbackLanguage, options.GeneratedNamespace),
             new EquatableArray<LanguageFileModel>(uniqueFiles),
             new EquatableArray<GeneratorDiagnosticInfo>(diagnosticBuilder.ToImmutable()),
             hasFallbackFile,
@@ -486,12 +525,14 @@ internal static class TranslationFileParser
         }
     }
 
-    public static string GetFallbackLanguage(AnalyzerConfigOptionsProvider optionsProvider)
+    public static TranslationGeneratorOptions GetOptions(AnalyzerConfigOptionsProvider optionsProvider)
     {
         optionsProvider.GlobalOptions.TryGetValue("build_property.FallbackLanguage", out var fallbackLanguage);
-        return string.IsNullOrWhiteSpace(fallbackLanguage)
-            ? TranslationGeneratorDefaults.DefaultFallbackLanguage
-            : fallbackLanguage.Trim().ToLowerInvariant();
+        optionsProvider.GlobalOptions.TryGetValue("build_property.GeneratedNamespace", out var generatedNamespace);
+
+        return new TranslationGeneratorOptions(
+            fallbackLanguage,
+            generatedNamespace);
     }
 
     private static void Flatten(
@@ -573,6 +614,35 @@ internal static class TranslationGeneratorUtilities
         .Replace(">", "&gt;")
         .Replace("\r", string.Empty)
         .Replace("\n", "\\n");
+
+    public static string WrapInNamespace(string sourceBody, string generatedNamespace)
+    {
+        if (string.IsNullOrWhiteSpace(generatedNamespace))
+        {
+            return sourceBody;
+        }
+
+        var builder = new StringBuilder();
+        builder.Append("namespace ")
+            .Append(generatedNamespace)
+            .AppendLine();
+        builder.AppendLine("{");
+
+        foreach (var line in (sourceBody ?? string.Empty).Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
+        {
+            if (line.Length == 0)
+            {
+                builder.AppendLine();
+            }
+            else
+            {
+                builder.Append("    ").AppendLine(line);
+            }
+        }
+
+        builder.AppendLine("}");
+        return builder.ToString();
+    }
 
     public static string ToCSharpStringLiteral(string value)
     {

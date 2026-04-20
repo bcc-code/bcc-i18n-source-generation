@@ -12,13 +12,13 @@ public sealed class I18NSourceGenerator : IIncrementalGenerator
             .Select(static (file, cancellationToken) => TranslationFileParser.Parse(file, cancellationToken))
             .WithTrackingName(TranslationGeneratorTrackingNames.ParsedTranslationFile);
 
-        var fallbackLanguage = context.AnalyzerConfigOptionsProvider
-            .Select(static (optionsProvider, _) => TranslationFileParser.GetFallbackLanguage(optionsProvider))
+        var generatorOptions = context.AnalyzerConfigOptionsProvider
+            .Select(static (optionsProvider, _) => TranslationFileParser.GetOptions(optionsProvider))
             .WithTrackingName(TranslationGeneratorTrackingNames.FallbackLanguage);
 
         var modelSet = parsedFiles
             .Collect()
-            .Combine(fallbackLanguage)
+            .Combine(generatorOptions)
             .Select(static (pair, _) => TranslationModelSetFactory.Create(pair.Left, pair.Right))
             .WithTrackingName(TranslationGeneratorTrackingNames.TranslationModelSet);
 

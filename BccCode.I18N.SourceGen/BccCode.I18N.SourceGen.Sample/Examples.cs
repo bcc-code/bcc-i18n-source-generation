@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using BccCode.I18N.SourceGen.Generated;
 
 namespace BccCode.I18N.SourceGen.Sample;
 
@@ -28,11 +29,11 @@ public class Examples
             Language.plural.banana(1),
             Language.plural.banana(2),
             
-            global::I18N.message.hello1,
-            global::I18N.message.hello2,
+            LanguageKeys.message.hello1,
+            LanguageKeys.message.hello2,
             
-            I18NStrings.GetString("message.hello1"),
-            I18NStrings.GetString("message.hello2")
+            LanguageStrings.GetString("message.hello1"),
+            LanguageStrings.GetString("message.hello2")
         ];
         
         foreach (var item in text)

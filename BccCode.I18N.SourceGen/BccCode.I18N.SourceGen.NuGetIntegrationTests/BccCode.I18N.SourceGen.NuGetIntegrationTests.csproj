@@ -6,6 +6,7 @@
         <IsPackable>false</IsPackable>
         <RootNamespace>BccCode.I18N.SourceGen.NuGetIntegrationTests</RootNamespace>
         <FallbackLanguage>en</FallbackLanguage>
+        <GeneratedNamespace>BccCode.I18N.SourceGen.IntegrationTests</GeneratedNamespace>
         <BccCodeI18NSourceGenPackageVersion Condition="'$(BccCodeI18NSourceGenPackageVersion)' == ''">1.0.0</BccCodeI18NSourceGenPackageVersion>
     </PropertyGroup>
 

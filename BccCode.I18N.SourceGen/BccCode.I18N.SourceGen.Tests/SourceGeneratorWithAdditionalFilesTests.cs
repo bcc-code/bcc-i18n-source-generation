@@ -56,21 +56,25 @@ public class SourceGeneratorWithAdditionalFilesTests
         .OrderBy(static fileName => fileName, StringComparer.Ordinal)
         .ToArray();
 
-    Assert.Equal(new[] { "I18N.g.cs", "I18NStrings.g.cs", "Language.g.cs" }, generatedFiles);
+    Assert.Equal(["Language.g.cs", "LanguageKeys.g.cs", "LanguageStrings.g.cs"], generatedFiles);
     Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
 
     var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    Assert.Contains("namespace BccCode.I18N.Tests.Generated", languageSource, StringComparison.Ordinal);
     Assert.Contains("public static class message", languageSource, StringComparison.Ordinal);
     Assert.Contains("public static string hello1 =>", languageSource, StringComparison.Ordinal);
-    Assert.Contains("\"en\" => \"hello world\"", languageSource, StringComparison.Ordinal);
+    Assert.Contains("\"no\" => \"hei verden\"", languageSource, StringComparison.Ordinal);
+    Assert.Contains("_ => \"hello world\"", languageSource, StringComparison.Ordinal);
     Assert.Contains("public static string hello2(object msg) =>", languageSource, StringComparison.Ordinal);
     Assert.Contains("public static string apple(int count) =>", languageSource, StringComparison.Ordinal);
 
-    var keySource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "I18N.g.cs");
+    var keySource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "LanguageKeys.g.cs");
+    Assert.Contains("namespace BccCode.I18N.Tests.Generated", keySource, StringComparison.Ordinal);
     Assert.Contains("public const string hello1 = \"message.hello1\";", keySource, StringComparison.Ordinal);
     Assert.Contains("public static class plural", keySource, StringComparison.Ordinal);
 
-    var dictionarySource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "I18NStrings.g.cs");
+    var dictionarySource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "LanguageStrings.g.cs");
+    Assert.Contains("namespace BccCode.I18N.Tests.Generated", dictionarySource, StringComparison.Ordinal);
     Assert.Contains("[\"message.hello1\"] = \"hei verden\"", dictionarySource, StringComparison.Ordinal);
     Assert.Contains("public static string? GetStringOrNull(string key)", dictionarySource, StringComparison.Ordinal);
   }
@@ -89,7 +93,7 @@ public class SourceGeneratorWithAdditionalFilesTests
     Assert.Contains("\"no\" => \"hei verden\"", languageSource, StringComparison.Ordinal);
     Assert.Contains("_ => \"hello world\"", languageSource, StringComparison.Ordinal);
 
-    var dictionarySource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "I18NStrings.g.cs");
+    var dictionarySource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "LanguageStrings.g.cs");
     Assert.Contains("culture = \"en\";", dictionarySource, StringComparison.Ordinal);
   }
 
@@ -99,8 +103,8 @@ public class SourceGeneratorWithAdditionalFilesTests
     var (_, runResult, outputCompilation) = GeneratorTestHelpers.RunGenerator(
         new I18NSourceGenerator(),
         [
-            new TestAdditionalFile("./no.json", InvalidJson),
-                new TestAdditionalFile("./en.json", EnJson)
+            new TestAdditionalFile("./en.json", InvalidJson),
+                new TestAdditionalFile("./no.json", NoJson)
         ]);
 
     var diagnostics = GeneratorTestHelpers.GetGeneratorDiagnostics(runResult);

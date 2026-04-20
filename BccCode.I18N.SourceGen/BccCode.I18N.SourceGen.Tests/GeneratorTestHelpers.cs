@@ -102,6 +102,8 @@ internal static class GeneratorTestHelpers
                 options["build_property.FallbackLanguage"] = fallbackLanguage;
             }
 
+            options["build_property.GeneratedNamespace"] = "BccCode.I18N.Tests.Generated";
+
             _globalOptions = new TestAnalyzerConfigOptions(options);
         }
 

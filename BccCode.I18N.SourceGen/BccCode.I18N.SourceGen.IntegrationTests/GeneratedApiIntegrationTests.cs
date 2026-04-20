@@ -10,10 +10,10 @@ public class GeneratedApiIntegrationTests
     {
         CultureInfo.CurrentUICulture = new CultureInfo("en");
 
-        Assert.Equal("hello world", global::Language.message.hello1);
-        Assert.Equal("hello world", global::I18NStrings.GetString(global::I18N.message.hello1));
-        Assert.Equal("message.hello2", global::I18N.message.hello2);
-        Assert.Equal("one apple", global::Language.plural.apple(1));
+        Assert.Equal("hello world", IntegrationTests.Language.message.hello1);
+        Assert.Equal("hello world", IntegrationTests.LanguageStrings.GetString(LanguageKeys.message.hello1));
+        Assert.Equal("message.hello2", IntegrationTests.LanguageKeys.message.hello2);
+        Assert.Equal("one apple", IntegrationTests.Language.plural.apple(1));
     }
 
     [Fact]
@@ -21,8 +21,8 @@ public class GeneratedApiIntegrationTests
     {
         CultureInfo.CurrentUICulture = new CultureInfo("de");
 
-        Assert.Equal("hello world", global::Language.message.hello1);
-        Assert.Equal("message.unknown", global::I18NStrings.GetString("message.unknown"));
-        Assert.Null(global::I18NStrings.GetStringOrNull("message.unknown"));
+        Assert.Equal("hello world", Language.message.hello1);
+        Assert.Equal("message.unknown", IntegrationTests.LanguageStrings.GetString("message.unknown"));
+        Assert.Null(IntegrationTests.LanguageStrings.GetStringOrNull("message.unknown"));
     }
 }

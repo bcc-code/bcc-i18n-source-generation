@@ -6,4 +6,4 @@ riderModule.iml
 .idea/
 BccCode.I18N.SourceGen/packages/
 BccCode.I18N.SourceGen/artifacts/
-BccCode.I18N.SourceGen/.runlogs/
+.runlogs/

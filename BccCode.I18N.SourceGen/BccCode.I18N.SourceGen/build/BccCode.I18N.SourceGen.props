@@ -2,10 +2,12 @@
   <PropertyGroup>
     <!-- Default fallback language if not specified by the consuming project -->
     <FallbackLanguage Condition="'$(FallbackLanguage)' == ''">no</FallbackLanguage>
+    <GeneratedNamespace Condition="'$(GeneratedNamespace)' == ''">$(RootNamespace)</GeneratedNamespace>
   </PropertyGroup>
 
   <ItemGroup>
     <CompilerVisibleProperty Include="FallbackLanguage" />
+    <CompilerVisibleProperty Include="GeneratedNamespace" />
   </ItemGroup>
 </Project>
 
