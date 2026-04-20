@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <IsPackable>false</IsPackable>
+        <RootNamespace>BccCode.I18N.SourceGen.NuGetIntegrationTests</RootNamespace>
+        <FallbackLanguage>en</FallbackLanguage>
+        <BccCodeI18NSourceGenPackageVersion Condition="'$(BccCodeI18NSourceGenPackageVersion)' == ''">1.0.0</BccCodeI18NSourceGenPackageVersion>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="BccCode.I18N.SourceGen" Version="$(BccCodeI18NSourceGenPackageVersion)" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Compile Include="..\BccCode.I18N.SourceGen.IntegrationTests\GeneratedApiIntegrationTests.cs"
+                 Link="GeneratedApiIntegrationTests.cs" />
+        <AdditionalFiles Include="..\BccCode.I18N.SourceGen.IntegrationTests\no.json"
+                         Link="no.json" />
+        <AdditionalFiles Include="..\BccCode.I18N.SourceGen.IntegrationTests\en.json"
+                         Link="en.json" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.6.2" />
+        <PackageReference Include="xunit" Version="2.4.2" />
+        <PackageReference Include="xunit.runner.visualstudio" Version="2.4.5">
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+            <PrivateAssets>all</PrivateAssets>
+        </PackageReference>
+    </ItemGroup>
+
+</Project>

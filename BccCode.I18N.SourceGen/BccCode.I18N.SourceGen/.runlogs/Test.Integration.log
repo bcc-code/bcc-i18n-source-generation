@@ -1,0 +1,2 @@
+MSBUILD : error MSB1009: Project file does not exist.
+Switch: .\BccCode.I18N.SourceGen.IntegrationTests\BccCode.I18N.SourceGen.IntegrationTests.csproj

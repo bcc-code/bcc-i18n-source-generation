@@ -1,0 +1,10 @@
+{
+    "message": {
+        "hello1": "hello world",
+        "hello2": "{msg} world"
+    },
+    "plural": {
+        "car": "car | cars",
+        "apple": "no apples | one apple | {count} apples"
+    }
+}
