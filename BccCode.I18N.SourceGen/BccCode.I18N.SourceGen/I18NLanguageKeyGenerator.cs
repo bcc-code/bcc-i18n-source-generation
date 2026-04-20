@@ -12,9 +12,18 @@ public class I18NLanguageKeyGenerator : IIncrementalGenerator
 {
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // Filter for .i18n.json files among AdditionalFiles
+        var fallbackLanguage = context.AnalyzerConfigOptionsProvider
+            .Select((opts, _) =>
+            {
+                opts.GlobalOptions.TryGetValue("build_property.FallbackLanguage", out var lang);
+                return string.IsNullOrWhiteSpace(lang) ? "no" : lang!;
+            });
+
+        // Filter for the fallback language JSON file among AdditionalFiles
         var additionalFiles = context.AdditionalTextsProvider
-            .Where(file => file.Path.EndsWith("no.json", StringComparison.OrdinalIgnoreCase));
+            .Combine(fallbackLanguage)
+            .Where(x => x.Left.Path.EndsWith($"{x.Right}.json", StringComparison.OrdinalIgnoreCase))
+            .Select((x, _) => x.Left);
 
         context.RegisterSourceOutput(additionalFiles, GenerateCode);
     }

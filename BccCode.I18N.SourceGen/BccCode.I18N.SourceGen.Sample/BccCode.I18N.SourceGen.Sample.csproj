@@ -1,9 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+    <!-- When referencing the generator as a ProjectReference (not via NuGet), import the props manually -->
+    <Import Project="..\BccCode.I18N.SourceGen\build\BccCode.I18N.SourceGen.props" />
+
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
         <RootNamespace>BccCode.I18N.SourceGen.Sample</RootNamespace>
+        <FallbackLanguage>en</FallbackLanguage>
     </PropertyGroup>
 
     <ItemGroup>

@@ -64,3 +64,18 @@ In your `.csproj`, include JSON files as `AdditionalFiles`:
   <AdditionalFiles Include="en.json" />
 </ItemGroup>
 ```
+
+### How to configure the fallback language
+By default the fallback language is Norwegian (`no`). You can change this by setting `FallbackLanguage` in your `.csproj`:
+```xml
+<PropertyGroup>
+  <FallbackLanguage>en</FallbackLanguage>
+</PropertyGroup>
+```
+The value must match the filename of one of your translation JSON files (without the `.json` extension). All three generated classes — `Language`, `I18N`, and `I18NStrings` — will use this language as the default when no matching translation is found for `CultureInfo.CurrentUICulture`.
+
+> **Note for project references:** When referencing the generator as a `ProjectReference` (rather than via NuGet), import the props file manually so `FallbackLanguage` is visible to the analyzer:
+> ```xml
+> <Import Project="..\BccCode.I18N.SourceGen\build\BccCode.I18N.SourceGen.props" />
+> ```
+> When consumed via NuGet, this import happens automatically.

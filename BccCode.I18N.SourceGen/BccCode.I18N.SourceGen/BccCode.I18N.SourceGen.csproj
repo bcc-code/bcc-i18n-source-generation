@@ -14,6 +14,11 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <!-- Ship the .props file alongside the analyzer so consumers get CompilerVisibleProperty automatically -->
+        <None Include="build\BccCode.I18N.SourceGen.props" Pack="true" PackagePath="build\" />
+    </ItemGroup>
+
+    <ItemGroup>
         <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

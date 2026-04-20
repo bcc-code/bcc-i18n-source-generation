@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <!-- Default fallback language if not specified by the consuming project -->
+    <FallbackLanguage Condition="'$(FallbackLanguage)' == ''">no</FallbackLanguage>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="FallbackLanguage" />
+  </ItemGroup>
+</Project>
+
