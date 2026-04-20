@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "DebugRoslynSourceGenerator": {
+      "commandName": "DebugRoslynComponent",
+      "targetProject": "../BccCode.I18N.SourceGen.Sample/BccCode.I18N.SourceGen.Sample.csproj"
+    }
+  }
+}

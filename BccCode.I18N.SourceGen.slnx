@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="BccCode.I18N.SourceGen/BccCode.I18N.SourceGen.Sample/BccCode.I18N.SourceGen.Sample.csproj" />
+  <Project Path="BccCode.I18N.SourceGen/BccCode.I18N.SourceGen.Tests/BccCode.I18N.SourceGen.Tests.csproj" />
+  <Project Path="BccCode.I18N.SourceGen/BccCode.I18N.SourceGen/BccCode.I18N.SourceGen.csproj" />
+</Solution>

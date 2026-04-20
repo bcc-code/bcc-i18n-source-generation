@@ -1,0 +1,12 @@
+{
+  "message": {
+    "hello1": "hei verden",
+    "hello2": "{msg} verden"
+  },
+  "plural":
+  {
+    "car": "bil | biler",
+    "apple": "ingen epler | et eple | {count} epler",
+    "banana": "ingen bananer | {n} banan | {n} bananer"
+  }
+}

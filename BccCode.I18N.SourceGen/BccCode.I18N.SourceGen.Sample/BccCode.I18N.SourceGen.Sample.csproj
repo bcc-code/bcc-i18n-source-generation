@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <RootNamespace>BccCode.I18N.SourceGen.Sample</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\BccCode.I18N.SourceGen\BccCode.I18N.SourceGen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Remove="no.json"/>
+        <None Remove="en.json"/>
+        <AdditionalFiles Include="no.json"/>
+        <AdditionalFiles Include="en.json"/>
+    </ItemGroup>
+
+</Project>
