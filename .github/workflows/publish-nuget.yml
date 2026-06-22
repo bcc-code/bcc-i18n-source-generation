@@ -8,12 +8,12 @@ on:
       - "v*.*.*"
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
   build-pack-publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout
@@ -47,7 +47,16 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: dotnet pack "BccCode.I18N.SourceGen/BccCode.I18N.SourceGen/BccCode.I18N.SourceGen.csproj" --configuration Release --no-build --output ./artifacts
 
+      - uses: NuGet/login@v1
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: login
+        with:
+          user: ${{vars.NUGET_USER}}
+
       - name: Publish to NuGet
         if: startsWith(github.ref, 'refs/tags/v')
-        run: dotnet nuget push "./artifacts/*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source "https://api.nuget.org/v3/index.json" --skip-duplicate
-
+        run: |
+          dotnet nuget push "./artifacts/*.nupkg"\
+          --api-key ${{ steps.login.outputs.NUGET_API_KEY }} \
+          --source https://api.nuget.org/v3/index.json \
+          --skip-duplicate
