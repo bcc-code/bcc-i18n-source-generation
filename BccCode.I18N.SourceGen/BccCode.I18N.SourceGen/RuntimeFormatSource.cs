@@ -1,0 +1,444 @@
+namespace BccCode.I18N.SourceGen;
+
+/// <summary>
+/// Source of the runtime message formatter that is emitted into <c>LanguageStrings</c> (for <c>Format</c>).
+/// It mirrors <see cref="TranslationMessageSyntax"/>: placeholders <c>{name}</c> / <c>{name:format}</c>
+/// (name is <c>\w+</c>, format has no braces), literals <c>{'text'}</c> and pipes outside of both.
+/// Links are already resolved in the stored values, so they are not handled here.
+/// Only methods are emitted (no static fields), so hot reload keeps working. The code uses C# 8 features at most.
+/// </summary>
+internal static class RuntimeFormatSource
+{
+    public const string Code = @"// Arguments of a numeric placeholder ({0}) that the caller did not pass.
+private sealed class MissingArgument
+{
+}
+
+// byIndex binds a numeric placeholder {n} to args[n] (as IStringLocalizer callers pass them). Otherwise the
+// arguments follow the parameter order of the Language member for the key.
+private static string FormatCore(string key, string language, global::System.IFormatProvider? provider, object?[]? args, bool byIndex)
+{
+    // Like the Language members, a language whose message uses placeholders that the key does not have
+    // is skipped as a whole in favor of the fallback language.
+    var text = GetStringOrNullByLanguage(key, HasUnsupportedPlaceholders(key, language) ? FallbackLanguage : language);
+    if (text == null)
+    {
+        return key;
+    }
+
+    var names = GetParameterNames(key);
+    var arguments = args ?? global::System.Array.Empty<object?>();
+    if (byIndex)
+    {
+        arguments = MapArgumentsByIndex(names, arguments);
+    }
+
+    return Substitute(SelectForm(text, arguments), names, arguments, provider);
+}
+
+internal static string FormatByIndex(string key, global::System.Globalization.CultureInfo? culture, object?[]? args) =>
+    culture == null
+        ? FormatCore(key, ResolveLanguage(global::System.Globalization.CultureInfo.CurrentUICulture), global::System.Globalization.CultureInfo.CurrentCulture, args, true)
+        : FormatCore(key, ResolveLanguage(culture), culture, args, true);
+
+private static object?[] MapArgumentsByIndex(string[]? names, object?[] args)
+{
+    if (names == null)
+    {
+        return args;
+    }
+
+    var mapped = new object?[names.Length];
+    for (var index = 0; index < names.Length; index++)
+    {
+        int position;
+        if (int.TryParse(names[index], global::System.Globalization.NumberStyles.None, global::System.Globalization.CultureInfo.InvariantCulture, out position))
+        {
+            mapped[index] = position < args.Length ? args[position] : new MissingArgument();
+        }
+        else
+        {
+            mapped[index] = index < args.Length ? args[index] : new MissingArgument();
+        }
+    }
+
+    return mapped;
+}
+
+// Selects the plural form with the vue-i18n rules: the absolute value of the first argument is the count.
+// Two forms: exactly 1 selects the first form, anything else the second. Three forms: exactly 0 selects the
+// first, exactly 1 the second, anything else the third. More forms: an integral count is the index and
+// larger or fractional counts use the last form. Without a numeric first argument the count is 1.
+private static string SelectForm(string text, object?[] args)
+{
+    global::System.Collections.Generic.List<int>? pipes = null;
+    var index = 0;
+    while (index < text.Length)
+    {
+        var character = text[index];
+        if (character == '{')
+        {
+            var end = ScanBrace(text, index, out _, out _, out _);
+            if (end > 0)
+            {
+                index = end;
+                continue;
+            }
+        }
+        else if (character == '@')
+        {
+            // A link that could not be resolved at generation time is kept as written.
+            var linkEnd = ScanLink(text, index);
+            if (linkEnd > 0)
+            {
+                index = linkEnd;
+                continue;
+            }
+        }
+        else if (character == '|')
+        {
+            if (pipes == null)
+            {
+                pipes = new global::System.Collections.Generic.List<int>();
+            }
+
+            pipes.Add(index);
+        }
+
+        index++;
+    }
+
+    if (pipes == null)
+    {
+        return text;
+    }
+
+    var formCount = pipes.Count + 1;
+    double count;
+    if (args.Length == 0 || !TryGetCount(args[0], out count))
+    {
+        count = 1;
+    }
+
+    count = global::System.Math.Abs(count);
+
+    int selected;
+    if (formCount == 2)
+    {
+        selected = count == 1 ? 0 : 1;
+    }
+    else if (formCount == 3)
+    {
+        selected = count == 0 ? 0 : count == 1 ? 1 : 2;
+    }
+    else
+    {
+        // An integral count is the index, a larger or fractional count uses the last form.
+        selected = count < formCount - 1 && global::System.Math.Floor(count) == count ? (int)count : formCount - 1;
+    }
+
+    var from = selected == 0 ? 0 : pipes[selected - 1] + 1;
+    var to = selected == pipes.Count ? text.Length : pipes[selected];
+    return text.Substring(from, to - from).Trim();
+}
+
+// Fractional counts are kept: only exactly 1 (or 0) selects the singular forms.
+private static bool TryGetCount(object? value, out double count)
+{
+    if (value is sbyte || value is byte || value is short || value is ushort || value is int || value is uint
+        || value is long || value is ulong || value is float || value is double || value is decimal)
+    {
+        count = global::System.Convert.ToDouble(value, global::System.Globalization.CultureInfo.InvariantCulture);
+        return true;
+    }
+
+    count = 0;
+    return false;
+}
+
+// Reads a link such as @:key, @:{'key'} or @.upper:key that starts at the '@' at index. Returns the index
+// after it, or -1 when the '@' does not start one. A trailing '.' is not part of a bare key.
+private static int ScanLink(string text, int index)
+{
+    var position = index + 1;
+    if (position < text.Length && text[position] == '.')
+    {
+        var colon = text.IndexOf(':', position);
+        if (colon < 0)
+        {
+            return -1;
+        }
+
+        var modifier = text.Substring(position + 1, colon - position - 1);
+        if (modifier != ""lower"" && modifier != ""upper"" && modifier != ""capitalize"")
+        {
+            return -1;
+        }
+
+        position = colon;
+    }
+
+    if (position >= text.Length || text[position] != ':')
+    {
+        return -1;
+    }
+
+    position++;
+    if (position + 1 < text.Length && text[position] == '{' && text[position + 1] == '\'')
+    {
+        var quote = text.IndexOf('\'', position + 2);
+        if (quote > position + 2 && quote + 1 < text.Length && text[quote + 1] == '}')
+        {
+            return quote + 2;
+        }
+
+        return -1;
+    }
+
+    var keyEnd = position;
+    while (keyEnd < text.Length && (IsWordCharacter(text[keyEnd]) || text[keyEnd] == '-' || text[keyEnd] == '$' || text[keyEnd] == '.'))
+    {
+        keyEnd++;
+    }
+
+    while (keyEnd > position && text[keyEnd - 1] == '.')
+    {
+        keyEnd--;
+    }
+
+    return keyEnd > position ? keyEnd : -1;
+}
+
+// Replaces {name} and {name:format} with the argument at the position of the name in the key's parameter
+// list, and {'text'} with text. A placeholder without a matching argument stays as written.
+private static string Substitute(string text, string[]? names, object?[] args, global::System.IFormatProvider? provider)
+{
+    if (text.IndexOf('{') < 0)
+    {
+        return text;
+    }
+
+    var builder = new global::System.Text.StringBuilder(text.Length + 16);
+    var index = 0;
+    while (index < text.Length)
+    {
+        var character = text[index];
+        if (character == '{')
+        {
+            var end = ScanBrace(text, index, out var name, out var format, out var isLiteral);
+            if (end > 0)
+            {
+                if (isLiteral)
+                {
+                    builder.Append(name);
+                }
+                else
+                {
+                    var position = names == null ? -1 : global::System.Array.IndexOf(names, name);
+                    if (position >= 0 && position < args.Length && !(args[position] is MissingArgument))
+                    {
+                        builder.Append(string.Format(provider, format == null ? ""{0}"" : ""{0:"" + format + ""}"", args[position]));
+                    }
+                    else
+                    {
+                        builder.Append(text, index, end - index);
+                    }
+                }
+
+                index = end;
+                continue;
+            }
+        }
+        else if (character == '@')
+        {
+            var linkEnd = ScanLink(text, index);
+            if (linkEnd > 0)
+            {
+                builder.Append(text, index, linkEnd - index);
+                index = linkEnd;
+                continue;
+            }
+        }
+
+        builder.Append(character);
+        index++;
+    }
+
+    return builder.ToString();
+}
+
+// Reads a placeholder or literal that starts at the '{' at index. Returns the index after the closing '}',
+// or -1 when the '{' does not start one.
+private static int ScanBrace(string text, int index, out string? name, out string? format, out bool isLiteral)
+{
+    name = null;
+    format = null;
+    isLiteral = false;
+    if (index + 1 < text.Length && text[index + 1] == '\'')
+    {
+        var literal = ReadLiteral(text, index, out var literalEnd);
+        if (literal != null)
+        {
+            name = literal;
+            isLiteral = true;
+            return literalEnd;
+        }
+    }
+
+    var position = index + 1;
+    while (position < text.Length && char.IsWhiteSpace(text[position]))
+    {
+        position++;
+    }
+
+    var nameStart = position;
+    while (position < text.Length && IsWordCharacter(text[position]))
+    {
+        position++;
+    }
+
+    if (position == nameStart)
+    {
+        return -1;
+    }
+
+    var nameEnd = position;
+    while (position < text.Length && char.IsWhiteSpace(text[position]))
+    {
+        position++;
+    }
+
+    if (position < text.Length && text[position] == ':')
+    {
+        var formatStart = position + 1;
+        position = formatStart;
+        while (position < text.Length && text[position] != '{' && text[position] != '}')
+        {
+            position++;
+        }
+
+        if (position >= text.Length || text[position] != '}')
+        {
+            return -1;
+        }
+
+        format = text.Substring(formatStart, position - formatStart);
+        name = text.Substring(nameStart, nameEnd - nameStart);
+        return position + 1;
+    }
+
+    if (position < text.Length && text[position] == '}')
+    {
+        name = text.Substring(nameStart, nameEnd - nameStart);
+        return position + 1;
+    }
+
+    return -1;
+}
+
+// Reads {'text'} at start with the vue-i18n escapes \' \\ \uXXXX and \UXXXXXX. Returns null when it is not a
+// literal (invalid escape or no end).
+private static string? ReadLiteral(string text, int start, out int end)
+{
+    var builder = new global::System.Text.StringBuilder();
+    var index = start + 2;
+    while (index < text.Length)
+    {
+        var character = text[index];
+        if (character == '\'' && index + 1 < text.Length && text[index + 1] == '}')
+        {
+            end = index + 2;
+            return builder.ToString();
+        }
+
+        if (character != '\\')
+        {
+            builder.Append(character);
+            index++;
+            continue;
+        }
+
+        if (index + 1 >= text.Length)
+        {
+            break;
+        }
+
+        var escape = text[index + 1];
+        if (escape == '\'' || escape == '\\')
+        {
+            builder.Append(escape);
+            index += 2;
+        }
+        else if (escape == 'u' || escape == 'U')
+        {
+            var length = escape == 'u' ? 4 : 6;
+            var codePoint = ReadCodePoint(text, index + 2, length);
+            if (codePoint == null)
+            {
+                break;
+            }
+
+            builder.Append(codePoint);
+            index += 2 + length;
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    end = start;
+    return null;
+}
+
+private static string? ReadCodePoint(string text, int start, int length)
+{
+    if (start + length > text.Length)
+    {
+        return null;
+    }
+
+    var number = 0;
+    for (var index = start; index < start + length; index++)
+    {
+        var character = text[index];
+        var digit = character >= '0' && character <= '9' ? character - '0'
+            : character >= 'a' && character <= 'f' ? character - 'a' + 10
+            : character >= 'A' && character <= 'F' ? character - 'A' + 10
+            : -1;
+        if (digit < 0)
+        {
+            return null;
+        }
+
+        number = (number * 16) + digit;
+    }
+
+    // Surrogates and values above U+10FFFF are not valid code points.
+    if (number > 0x10FFFF || (number >= 0xD800 && number <= 0xDFFF))
+    {
+        return null;
+    }
+
+    return char.ConvertFromUtf32(number);
+}
+
+// Same characters as \w in a regular expression.
+private static bool IsWordCharacter(char character)
+{
+    switch (global::System.Globalization.CharUnicodeInfo.GetUnicodeCategory(character))
+    {
+        case global::System.Globalization.UnicodeCategory.UppercaseLetter:
+        case global::System.Globalization.UnicodeCategory.LowercaseLetter:
+        case global::System.Globalization.UnicodeCategory.TitlecaseLetter:
+        case global::System.Globalization.UnicodeCategory.ModifierLetter:
+        case global::System.Globalization.UnicodeCategory.OtherLetter:
+        case global::System.Globalization.UnicodeCategory.NonSpacingMark:
+        case global::System.Globalization.UnicodeCategory.DecimalDigitNumber:
+        case global::System.Globalization.UnicodeCategory.ConnectorPunctuation:
+            return true;
+        default:
+            return false;
+    }
+}";
+}

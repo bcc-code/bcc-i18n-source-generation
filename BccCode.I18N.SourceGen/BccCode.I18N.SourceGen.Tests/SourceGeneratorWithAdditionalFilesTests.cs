@@ -188,7 +188,8 @@ public class SourceGeneratorWithAdditionalFilesTests
     Assert.Contains("FallbackLanguage", secondResult.TrackedSteps.Keys);
     Assert.Contains("TranslationModelSet", secondResult.TrackedSteps.Keys);
 
-    foreach (var trackingName in secondResult.TrackedSteps.Keys)
+    // The compilation itself is a new object in every run, so that built-in step is always modified.
+    foreach (var trackingName in secondResult.TrackedSteps.Keys.Where(static name => name != "Compilation"))
     {
       Assert.Equal(firstResult.TrackedSteps[trackingName].Length, secondResult.TrackedSteps[trackingName].Length);
 
@@ -404,9 +405,9 @@ public class SourceGeneratorWithAdditionalFilesTests
         .RunGenerators(GeneratorTestHelpers.CreateCompilation());
 
     var result = Assert.Single(driver.GetRunResult().Results);
-    // All source outputs are tracked under "SourceOutput", in registration order: diagnostics, keys, language, strings.
+    // All source outputs are tracked under "SourceOutput", in registration order: diagnostics, keys, language, strings, string localizer.
     var outputSteps = Assert.Single(result.TrackedOutputSteps).Value;
-    Assert.Equal(4, outputSteps.Length);
+    Assert.Equal(5, outputSteps.Length);
     var keysOutput = outputSteps[1];
     var languageOutput = outputSteps[2];
     var stringsOutput = outputSteps[3];

@@ -28,7 +28,7 @@ public class VueI18nCompatibilityTests
                                   }
                                   """;
 
-  private static string Run(TestAdditionalFile[] files, string body, bool checkedOverflow = false) => LocalizedLanguageTests.Run(files, body, checkedOverflow);
+  private static string Run(TestAdditionalFile[] files, string body, bool checkedOverflow = false) => LocalizedLanguageTests.Run(files, body, checkedOverflow: checkedOverflow);
 
   [Fact]
   public void Two_forms_use_the_first_form_only_for_a_count_of_one()

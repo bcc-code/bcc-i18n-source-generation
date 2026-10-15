@@ -318,12 +318,19 @@ public class LocalizedLanguageTests
     Assert.Equal("norsk|only english|null|missing|english {x:N2}|english {x:N2}", result);
   }
 
-  internal static string Run(TestAdditionalFile[] files, string body, bool checkedOverflow = false)
+  internal static string Run(
+      TestAdditionalFile[] files,
+      string body,
+      bool referenceLocalization = false,
+      string[]? extraSources = null,
+      bool checkedOverflow = false)
   {
     var (_, runResult, compilation) = GeneratorTestHelpers.RunGenerator(
         new I18NSourceGenerator(),
         files,
-        fallbackLanguage: "en");
+        fallbackLanguage: "en",
+        referenceLocalization: referenceLocalization,
+        extraSources: extraSources);
     Assert.DoesNotContain(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult), static d => d.Severity == DiagnosticSeverity.Error);
 
     var probe = CSharpSyntaxTree.ParseText(

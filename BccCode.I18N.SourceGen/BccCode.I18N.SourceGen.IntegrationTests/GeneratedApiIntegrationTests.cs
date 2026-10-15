@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Linq;
+using Microsoft.Extensions.Localization;
 using Xunit;
 
 namespace BccCode.I18N.SourceGen.IntegrationTests;
@@ -179,5 +181,54 @@ public class GeneratedApiIntegrationTests
         Assert.Equal("car", english.plural.car(-1));
         Assert.Equal("bil", norwegian.plural.car(1));
         Assert.Equal("biler", norwegian.plural.car(2));
+    }
+
+    [Fact]
+    public void LanguageStrings_lists_languages_and_keys()
+    {
+        Assert.Equal("en", LanguageStrings.FallbackLanguage);
+        Assert.Equal(["en", "no"], LanguageStrings.Languages);
+        Assert.Contains("message.hello1", LanguageStrings.Keys);
+        Assert.Equal(LanguageStrings.Keys.Count, LanguageStrings.GetAllStrings(new CultureInfo("nb-NO")).Count);
+        Assert.Equal("hei verden", LanguageStrings.GetAllStrings("NO").Single(pair => pair.Key == "message.hello1").Value);
+        Assert.Empty(LanguageStrings.GetAllStrings("de"));
+    }
+
+    [Fact]
+    public void LanguageStrings_Format_matches_the_language_members()
+    {
+        var norwegian = new CultureInfo("nb-NO");
+
+        Assert.Equal("x verden", LanguageStrings.Format("message.hello2", norwegian, "x"));
+        Assert.Equal(new LocalizedLanguage(norwegian).message.price(1234.5m), LanguageStrings.Format("message.price", norwegian, 1234.5m));
+        Assert.Equal("3 epler", LanguageStrings.Format("plural.apple", norwegian, 3));
+        Assert.Equal("bil", LanguageStrings.Format("plural.car", norwegian, 1));
+        Assert.Equal("message.unknown", LanguageStrings.Format("message.unknown", norwegian));
+    }
+
+    [Fact]
+    public void LanguageStringLocalizer_returns_translations_for_its_culture()
+    {
+        var localizer = new LanguageStringLocalizer(new CultureInfo("nb-NO"));
+
+        Assert.Equal("hei verden", localizer["message.hello1"].Value);
+        Assert.Equal("x verden", localizer["message.hello2", "x"].Value);
+        Assert.False(localizer["message.hello1"].ResourceNotFound);
+        Assert.True(localizer["message.unknown"].ResourceNotFound);
+        Assert.Equal("message.unknown", localizer["message.unknown"].Value);
+        Assert.Equal(LanguageStrings.Keys.Count, localizer.GetAllStrings(true).Count());
+    }
+
+    [Fact]
+    public void StringLocalizer_of_T_uses_the_translation_files_through_the_factory()
+    {
+        var localizer = new StringLocalizer<GeneratedApiIntegrationTests>(new LanguageStringLocalizerFactory());
+
+        CultureInfo.CurrentUICulture = new CultureInfo("nb-NO");
+        Assert.Equal("hei verden", localizer["message.hello1"].Value);
+
+        CultureInfo.CurrentUICulture = new CultureInfo("en-US");
+        Assert.Equal("hello world", localizer["message.hello1"].Value);
+        Assert.Equal("x world", localizer["message.hello2", "x"].Value);
     }
 }
