@@ -24,12 +24,12 @@ The NuGet package imports `build/BccCode.I18N.SourceGen.props` for you. With a `
 
 Without this import:
 
-- `FallbackLanguage`, `GeneratedNamespace` and `I18NLanguageAliases` are not visible to the generator. The fallback language is then `en`, and the types are in the global namespace.
+- `FallbackLanguage`, `GeneratedNamespace`, `RootNamespace` and `I18NLanguageAliases` are not visible to the generator. The fallback language is then `en`, and the types are in the global namespace.
 - The `I18NTranslation` metadata is not visible, so every `.json` file in `AdditionalFiles` is treated as a translation file.
 
-## 3. Set the properties explicitly
+## 3. Set the properties
 
-The props file sets `GeneratedNamespace` from `RootNamespace` at the point of the import. Set `GeneratedNamespace` (and `FallbackLanguage`) in your project file so the result does not depend on where the import is:
+Set the properties in your project file as with the NuGet package. The import can be anywhere in the project file: the generator reads the property values at compile time.
 
 ```xml
 <PropertyGroup>
@@ -37,6 +37,8 @@ The props file sets `GeneratedNamespace` from `RootNamespace` at the point of th
   <GeneratedNamespace>MyApp.Localization</GeneratedNamespace>
 </PropertyGroup>
 ```
+
+Without `GeneratedNamespace`, the types are in the project's `RootNamespace`.
 
 ## Complete example
 

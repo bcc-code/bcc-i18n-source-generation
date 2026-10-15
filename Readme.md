@@ -58,7 +58,7 @@ string key = LanguageKeys.menu.save;            // "menu.save"
 string byKey = LanguageStrings.GetString(key);  // "Save"
 ```
 
-The fallback language defaults to `no` when `FallbackLanguage` is not set. Without `GeneratedNamespace`, the classes are generated in the global namespace.
+The fallback language defaults to `no` when `FallbackLanguage` is not set. Without `GeneratedNamespace`, the classes are generated in the project's `RootNamespace`.
 
 ## Documentation
 
