@@ -55,6 +55,8 @@ internal readonly struct TranslationGeneratorOptions : IEquatable<TranslationGen
 
 internal static class TranslationGeneratorTrackingNames
 {
+    public const string TranslationFileCandidate = nameof(TranslationFileCandidate);
+    public const string AnyFileMarked = nameof(AnyFileMarked);
     public const string ParsedTranslationFile = nameof(ParsedTranslationFile);
     public const string FallbackLanguage = nameof(FallbackLanguage);
     public const string TranslationModelSet = nameof(TranslationModelSet);
@@ -595,11 +597,38 @@ internal static class TranslationFileParser
     }
 }
 
+internal readonly struct TranslationFileCandidate : IEquatable<TranslationFileCandidate>
+{
+    public TranslationFileCandidate(AdditionalText file, bool isMarked)
+    {
+        File = file;
+        IsMarked = isMarked;
+    }
+
+    public AdditionalText File { get; }
+
+    public bool IsMarked { get; }
+
+    public bool Equals(TranslationFileCandidate other) =>
+        ReferenceEquals(File, other.File) && IsMarked == other.IsMarked;
+
+    public override bool Equals(object? obj) => obj is TranslationFileCandidate other && Equals(other);
+
+    public override int GetHashCode() =>
+        (System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(File) * 397) ^ IsMarked.GetHashCode();
+}
+
 internal static class TranslationGeneratorUtilities
 {
     public const string DefaultCountParameter = "count";
 
     private static readonly Regex PlaceholderRegex = new(@"\{(\s*\w+\s*)\}", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    public const string TranslationMetadataKey = "build_metadata.AdditionalFiles.I18NTranslation";
+
+    public static bool IsMarkedAsTranslation(AnalyzerConfigOptionsProvider optionsProvider, AdditionalText file) =>
+        optionsProvider.GetOptions(file).TryGetValue(TranslationMetadataKey, out var value)
+        && string.Equals(value?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
 
     public static bool IsJsonFile(AdditionalText file) =>
         file.Path.EndsWith(".json", StringComparison.OrdinalIgnoreCase);

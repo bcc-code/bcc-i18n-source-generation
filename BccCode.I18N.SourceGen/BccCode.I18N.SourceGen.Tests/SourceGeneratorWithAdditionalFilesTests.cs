@@ -207,6 +207,118 @@ public class SourceGeneratorWithAdditionalFilesTests
             $"Expected generated output to be cached or unchanged on the second run, but saw {output.Reason}."));
   }
 
+  private const string DeJson = """{ "message": { "hello1": "hallo welt" } }""";
+
+  [Fact]
+  public void Only_marked_files_are_translations_when_any_file_is_marked()
+  {
+    var (_, runResult, outputCompilation) = GeneratorTestHelpers.RunGenerator(
+        new I18NSourceGenerator(),
+        [
+            new TestAdditionalFile("./en.json", EnJson, "true"),
+            new TestAdditionalFile("./no.json", NoJson, "true"),
+            new TestAdditionalFile("./settings.json", "[1,2]"),
+            new TestAdditionalFile("./de.json", DeJson)
+        ],
+        fallbackLanguage: "en");
+
+    Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
+
+    var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    Assert.Contains("\"no\" => \"hei verden\"", languageSource, StringComparison.Ordinal);
+    Assert.DoesNotContain("\"de\"", languageSource, StringComparison.Ordinal);
+
+    var dictionarySource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "LanguageStrings.g.cs");
+    Assert.DoesNotContain("\"de\"", dictionarySource, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public void All_json_files_are_translations_when_no_file_is_marked()
+  {
+    var (_, runResult, outputCompilation) = GeneratorTestHelpers.RunGenerator(
+        new I18NSourceGenerator(),
+        [
+            new TestAdditionalFile("./en.json", EnJson),
+            new TestAdditionalFile("./no.json", NoJson),
+            new TestAdditionalFile("./de.json", DeJson)
+        ],
+        fallbackLanguage: "en");
+
+    Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
+
+    var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    Assert.Contains("\"de\" => \"hallo welt\"", languageSource, StringComparison.Ordinal);
+  }
+
+  [Theory]
+  [InlineData("True", true)]
+  [InlineData(" true ", true)]
+  [InlineData("false", false)]
+  [InlineData("", false)]
+  public void Metadata_value_decides_whether_a_file_is_marked(string metadata, bool expectedMarked)
+  {
+    var (_, _, outputCompilation) = GeneratorTestHelpers.RunGenerator(
+        new I18NSourceGenerator(),
+        [
+            new TestAdditionalFile("./en.json", EnJson, "true"),
+            new TestAdditionalFile("./de.json", DeJson, metadata)
+        ],
+        fallbackLanguage: "en");
+
+    var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    Assert.Equal(expectedMarked, languageSource.Contains("\"de\" => \"hallo welt\"", StringComparison.Ordinal));
+  }
+
+  [Fact]
+  public void Marked_file_that_is_not_json_is_ignored()
+  {
+    var (_, runResult, outputCompilation) = GeneratorTestHelpers.RunGenerator(
+        new I18NSourceGenerator(),
+        [
+            new TestAdditionalFile("./en.json", EnJson, "true"),
+            new TestAdditionalFile("./de.txt", "not json", "true")
+        ],
+        fallbackLanguage: "en");
+
+    Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
+    Assert.Contains(outputCompilation.SyntaxTrees, static tree => Path.GetFileName(tree.FilePath) == "Language.g.cs");
+  }
+
+  [Fact]
+  public void Editing_an_unmarked_file_leaves_translation_outputs_unchanged()
+  {
+    var noFile = new TestAdditionalFile("./no.json", NoJson, "true");
+    var enFile = new TestAdditionalFile("./en.json", EnJson, "true");
+    var settingsFile = new TestAdditionalFile("./settings.json", """{ "a": [1] }""");
+
+    var (driver, _, _) = GeneratorTestHelpers.RunGenerator(
+        new I18NSourceGenerator(),
+        [noFile, enFile, settingsFile],
+        fallbackLanguage: "en",
+        trackIncrementalSteps: true);
+
+    driver = driver
+        .ReplaceAdditionalText(settingsFile, new TestAdditionalFile("./settings.json", """{ "a": [2] }"""))
+        .RunGenerators(GeneratorTestHelpers.CreateCompilation());
+
+    var result = Assert.Single(driver.GetRunResult().Results);
+
+    foreach (var trackingName in new[] { "ParsedTranslationFile", "TranslationModelSet" })
+    {
+      Assert.All(
+          result.TrackedSteps[trackingName].SelectMany(static step => step.Outputs),
+          output => Assert.True(
+              output.Reason == IncrementalStepRunReason.Cached || output.Reason == IncrementalStepRunReason.Unchanged,
+              $"Expected '{trackingName}' to be cached or unchanged, but saw {output.Reason}."));
+    }
+
+    Assert.All(
+        result.TrackedOutputSteps.SelectMany(static step => step.Value).SelectMany(static step => step.Outputs),
+        output => Assert.True(
+            output.Reason == IncrementalStepRunReason.Cached || output.Reason == IncrementalStepRunReason.Unchanged,
+            $"Expected generated output to be cached or unchanged, but saw {output.Reason}."));
+  }
+
   [Fact]
   public void Generates_plural_method_when_only_a_non_fallback_language_is_plural()
   {

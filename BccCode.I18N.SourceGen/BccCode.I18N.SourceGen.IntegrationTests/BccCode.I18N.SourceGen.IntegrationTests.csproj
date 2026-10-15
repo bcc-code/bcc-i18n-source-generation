@@ -18,8 +18,9 @@
     </ItemGroup>
 
     <ItemGroup>
-        <AdditionalFiles Include="no.json" />
-        <AdditionalFiles Include="en.json" />
+        <AdditionalFiles Include="no.json" I18NTranslation="true" />
+        <AdditionalFiles Include="en.json" I18NTranslation="true" />
+        <AdditionalFiles Include="unrelated.json" />
     </ItemGroup>
 
     <ItemGroup>
