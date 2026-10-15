@@ -77,7 +77,7 @@ internal static class GeneratorTestHelpers
             driverOptions: driverOptions);
     }
 
-    private static CSharpCompilation CreateCompilation()
+    public static CSharpCompilation CreateCompilation()
     {
         var references = AppDomain.CurrentDomain.GetAssemblies()
             .Where(static assembly => !assembly.IsDynamic && !string.IsNullOrWhiteSpace(assembly.Location))

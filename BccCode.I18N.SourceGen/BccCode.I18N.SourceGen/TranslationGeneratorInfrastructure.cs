@@ -58,6 +58,8 @@ internal static class TranslationGeneratorTrackingNames
     public const string ParsedTranslationFile = nameof(ParsedTranslationFile);
     public const string FallbackLanguage = nameof(FallbackLanguage);
     public const string TranslationModelSet = nameof(TranslationModelSet);
+    public const string ModelSetDiagnostics = nameof(ModelSetDiagnostics);
+    public const string LanguageKeysModel = nameof(LanguageKeysModel);
 }
 
 internal static class TranslationGeneratorDiagnostics
@@ -340,6 +342,33 @@ internal readonly struct LanguageFileParseResult : IEquatable<LanguageFileParseR
     }
 }
 
+internal readonly struct LanguageKeysModel : IEquatable<LanguageKeysModel>
+{
+    public LanguageKeysModel(string generatedNamespace, EquatableArray<TranslationEntryModel> entries)
+    {
+        GeneratedNamespace = generatedNamespace ?? string.Empty;
+        Entries = entries;
+    }
+
+    public string GeneratedNamespace { get; }
+
+    public EquatableArray<TranslationEntryModel> Entries { get; }
+
+    public bool Equals(LanguageKeysModel other) =>
+        string.Equals(GeneratedNamespace, other.GeneratedNamespace, StringComparison.Ordinal) &&
+        Entries.Equals(other.Entries);
+
+    public override bool Equals(object? obj) => obj is LanguageKeysModel other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        unchecked
+        {
+            return (StringComparer.Ordinal.GetHashCode(GeneratedNamespace) * 397) ^ Entries.GetHashCode();
+        }
+    }
+}
+
 internal readonly struct TranslationModelSet : IEquatable<TranslationModelSet>
 {
     public TranslationModelSet(
@@ -531,8 +560,8 @@ internal static class TranslationFileParser
         optionsProvider.GlobalOptions.TryGetValue("build_property.GeneratedNamespace", out var generatedNamespace);
 
         return new TranslationGeneratorOptions(
-            fallbackLanguage,
-            generatedNamespace);
+            fallbackLanguage ?? string.Empty,
+            generatedNamespace ?? string.Empty);
     }
 
     private static void Flatten(
@@ -616,35 +645,6 @@ internal static class TranslationGeneratorUtilities
         .Replace(">", "&gt;")
         .Replace("\r", string.Empty)
         .Replace("\n", "\\n");
-
-    public static string WrapInNamespace(string sourceBody, string generatedNamespace)
-    {
-        if (string.IsNullOrWhiteSpace(generatedNamespace))
-        {
-            return sourceBody;
-        }
-
-        var builder = new StringBuilder();
-        builder.Append("namespace ")
-            .Append(generatedNamespace)
-            .AppendLine();
-        builder.AppendLine("{");
-
-        foreach (var line in (sourceBody ?? string.Empty).Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
-        {
-            if (line.Length == 0)
-            {
-                builder.AppendLine();
-            }
-            else
-            {
-                builder.Append("    ").AppendLine(line);
-            }
-        }
-
-        builder.AppendLine("}");
-        return builder.ToString();
-    }
 
     public static string ToCSharpStringLiteral(string value)
     {
@@ -745,7 +745,14 @@ internal static class TranslationGeneratorUtilities
             return true;
         }
 
-        expression = $"string.Format(CultureInfo.CurrentCulture, {literal}, {string.Join(", ", parameterNames)})";
+        var expressionBuilder = new StringBuilder("string.Format(global::System.Globalization.CultureInfo.CurrentCulture, ", literal.Length + 96);
+        expressionBuilder.Append(literal);
+        foreach (var parameterName in parameterNames)
+        {
+            expressionBuilder.Append(", ").Append(SanitizeName(parameterName));
+        }
+
+        expression = expressionBuilder.Append(')').ToString();
         return true;
     }
 
