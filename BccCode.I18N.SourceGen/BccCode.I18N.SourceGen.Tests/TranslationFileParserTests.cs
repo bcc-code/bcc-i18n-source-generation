@@ -256,6 +256,87 @@ public class TranslationFileParserTests
   }
 
   [Fact]
+  public void Root_empty_object_gives_no_entries_and_no_diagnostics()
+  {
+    var result = Parse("{}");
+
+    Assert.True(result.HasFile);
+    Assert.Empty(result.File.Entries.Array);
+    Assert.Empty(result.Diagnostics.Array);
+  }
+
+  [Fact]
+  public void Accepts_escaped_nul_in_values_and_names_and_generates_valid_csharp()
+  {
+    var json = "{ \"a@u0000b\": \"x@u0000y\" }".Replace("@", "\\");
+    var result = Parse(json);
+
+    Assert.Equal([("a\0b", "x\0y")], Entries(result));
+    Assert.Empty(result.Diagnostics.Array);
+
+    var (_, runResult, outputCompilation) = GeneratorTestHelpers.RunGenerator(
+        new I18NSourceGenerator(),
+        [new TestAdditionalFile("./en.json", json)],
+        fallbackLanguage: "en");
+
+    Assert.DoesNotContain(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult), static d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+    Assert.DoesNotContain(outputCompilation.GetDiagnostics(), static d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+    var generated = string.Concat(outputCompilation.SyntaxTrees
+        .Where(static tree => tree.FilePath.EndsWith(".g.cs", StringComparison.Ordinal))
+        .Select(static tree => tree.ToString()));
+    Assert.Contains("x\\0y", generated, StringComparison.Ordinal);
+    // The string literals escape NUL. (Doc comments still carry the raw character, which is harmless in a comment.)
+    Assert.DoesNotContain(
+        generated.Split('\n'),
+        static line => !line.TrimStart().StartsWith("///", StringComparison.Ordinal) && line.IndexOf('\0') >= 0);
+  }
+
+  [Fact]
+  public void Bad_escape_in_a_property_name_points_at_the_escape()
+  {
+    var diagnostic = SingleDiagnostic(Parse("{ \"a@qb\": 1 }".Replace("@", "\\")));
+
+    Assert.Equal("I18N001", diagnostic.Descriptor.Id);
+    Assert.Contains("is not a valid escape", diagnostic.Message, StringComparison.Ordinal);
+    Assert.EndsWith("(line 1, column 5)", diagnostic.Message, StringComparison.Ordinal);
+    Assert.Equal(new TextSpan(4, 0), diagnostic.Location!.Value.ToLocation().SourceSpan);
+  }
+
+  [Theory]
+  [InlineData("1.5e-3")]
+  [InlineData("-0.0E+2")]
+  [InlineData("0e0")]
+  [InlineData("-1E-10")]
+  public void Numbers_with_exponents_are_unsupported_values_not_syntax_errors(string number)
+  {
+    var diagnostic = SingleDiagnostic(Parse("{ \"n\": " + number + " }"));
+
+    Assert.Equal("I18N003", diagnostic.Descriptor.Id);
+  }
+
+  [Theory]
+  [InlineData("\"a\": \"@uD83D\"", "high", 8)]
+  [InlineData("\"a\": \"@uD83Dx\"", "high", 8)]
+  [InlineData("\"a\": \"x@uDE00\"", "low", 9)]
+  [InlineData("\"a\": \"@uDE00@uD83D\"", "low", 8)]
+  [InlineData("\"@uD83D\": 1", "high", 3)]
+  [InlineData("\"a\": \"ok😀@uDE00\"", "low", 12)]
+  public void Rejects_raw_lone_surrogates(string members, string kind, int expectedOffset)
+  {
+    // "@uXXXX" marks a raw surrogate char in the text; it is not a JSON escape.
+    var raw = System.Text.RegularExpressions.Regex.Replace(
+        members, "@u([0-9A-F]{4})", static m => ((char)Convert.ToInt32(m.Groups[1].Value, 16)).ToString());
+    var json = "{ " + raw + " }";
+
+    var diagnostic = SingleDiagnostic(Parse(json));
+
+    Assert.Equal("I18N001", diagnostic.Descriptor.Id);
+    Assert.Contains($"unpaired {kind} surrogate character", diagnostic.Message, StringComparison.Ordinal);
+    Assert.Equal(new TextSpan(expectedOffset, 0), diagnostic.Location!.Value.ToLocation().SourceSpan);
+    Assert.EndsWith($"(line 1, column {expectedOffset + 1})", diagnostic.Message, StringComparison.Ordinal);
+  }
+
+  [Fact]
   public void Does_not_overflow_the_stack_on_very_deep_input()
   {
     var diagnostic = SingleDiagnostic(Parse(new string('[', 200_000)));

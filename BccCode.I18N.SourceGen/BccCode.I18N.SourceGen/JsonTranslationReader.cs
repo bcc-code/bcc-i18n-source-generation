@@ -94,7 +94,7 @@ internal sealed class JsonTranslationReader
     private JsonTranslationReader(string text)
     {
         _text = text;
-        if (text.Length > 0 && text[0] == '﻿')
+        if (text.Length > 0 && text[0] == '\uFEFF')
         {
             _pos = 1;
         }
@@ -309,6 +309,22 @@ internal sealed class JsonTranslationReader
             if (c < ' ')
             {
                 throw Error($"a control character (U+{(int)c:X4}) in a string must be escaped");
+            }
+
+            if (char.IsHighSurrogate(c))
+            {
+                if (_pos + 1 >= _text.Length || !char.IsLowSurrogate(_text[_pos + 1]))
+                {
+                    throw Error("the string contains an unpaired high surrogate character");
+                }
+
+                _pos += 2;
+                continue;
+            }
+
+            if (char.IsLowSurrogate(c))
+            {
+                throw Error("the string contains an unpaired low surrogate character");
             }
 
             if (c != '\\')
