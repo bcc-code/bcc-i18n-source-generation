@@ -17,6 +17,7 @@
         <Description>Incremental Roslyn source generator for strongly-typed i18n translations from JSON files.</Description>
         <Authors>BCC</Authors>
         <PackageReadmeFile>Readme.md</PackageReadmeFile>
+        <DevelopmentDependency>true</DevelopmentDependency>
         <!-- The generator dll is packed by hand under analyzers/ (no lib/ output), so a .snupkg would be
              empty. Embed the PDB, with Source Link, in the dll instead so the generator can be debugged. -->
         <DebugType>embedded</DebugType>
@@ -25,6 +26,7 @@
     <ItemGroup>
         <!-- Ship the .props file alongside the analyzer so consumers get CompilerVisibleProperty automatically -->
         <None Include="build\BccCode.I18N.SourceGen.props" Pack="true" PackagePath="build\" />
+        <None Include="build/BccCode.I18N.SourceGen.props" Pack="true" PackagePath="buildTransitive/" />
         <None Include="..\..\Readme.md" Pack="true" PackagePath="\" />
         <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
         <!-- Pack only the explicit generator runtime dependencies needed beyond the compiler host. -->

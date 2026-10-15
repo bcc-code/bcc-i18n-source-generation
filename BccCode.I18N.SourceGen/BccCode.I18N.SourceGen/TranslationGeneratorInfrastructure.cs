@@ -58,6 +58,8 @@ internal static class TranslationGeneratorTrackingNames
     public const string ParsedTranslationFile = nameof(ParsedTranslationFile);
     public const string FallbackLanguage = nameof(FallbackLanguage);
     public const string TranslationModelSet = nameof(TranslationModelSet);
+    public const string ModelSetDiagnostics = nameof(ModelSetDiagnostics);
+    public const string LanguageKeysModel = nameof(LanguageKeysModel);
 }
 
 internal static class TranslationGeneratorDiagnostics
@@ -340,6 +342,33 @@ internal readonly struct LanguageFileParseResult : IEquatable<LanguageFileParseR
     }
 }
 
+internal readonly struct LanguageKeysModel : IEquatable<LanguageKeysModel>
+{
+    public LanguageKeysModel(string generatedNamespace, EquatableArray<TranslationEntryModel> entries)
+    {
+        GeneratedNamespace = generatedNamespace ?? string.Empty;
+        Entries = entries;
+    }
+
+    public string GeneratedNamespace { get; }
+
+    public EquatableArray<TranslationEntryModel> Entries { get; }
+
+    public bool Equals(LanguageKeysModel other) =>
+        string.Equals(GeneratedNamespace, other.GeneratedNamespace, StringComparison.Ordinal) &&
+        Entries.Equals(other.Entries);
+
+    public override bool Equals(object? obj) => obj is LanguageKeysModel other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        unchecked
+        {
+            return (StringComparer.Ordinal.GetHashCode(GeneratedNamespace) * 397) ^ Entries.GetHashCode();
+        }
+    }
+}
+
 internal readonly struct TranslationModelSet : IEquatable<TranslationModelSet>
 {
     public TranslationModelSet(
@@ -531,8 +560,8 @@ internal static class TranslationFileParser
         optionsProvider.GlobalOptions.TryGetValue("build_property.GeneratedNamespace", out var generatedNamespace);
 
         return new TranslationGeneratorOptions(
-            fallbackLanguage,
-            generatedNamespace);
+            fallbackLanguage ?? string.Empty,
+            generatedNamespace ?? string.Empty);
     }
 
     private static void Flatten(
@@ -617,35 +646,6 @@ internal static class TranslationGeneratorUtilities
         .Replace("\r", string.Empty)
         .Replace("\n", "\\n");
 
-    public static string WrapInNamespace(string sourceBody, string generatedNamespace)
-    {
-        if (string.IsNullOrWhiteSpace(generatedNamespace))
-        {
-            return sourceBody;
-        }
-
-        var builder = new StringBuilder();
-        builder.Append("namespace ")
-            .Append(generatedNamespace)
-            .AppendLine();
-        builder.AppendLine("{");
-
-        foreach (var line in (sourceBody ?? string.Empty).Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
-        {
-            if (line.Length == 0)
-            {
-                builder.AppendLine();
-            }
-            else
-            {
-                builder.Append("    ").AppendLine(line);
-            }
-        }
-
-        builder.AppendLine("}");
-        return builder.ToString();
-    }
-
     public static string ToCSharpStringLiteral(string value)
     {
         var builder = new StringBuilder(value?.Length ?? 0 + 2);
@@ -706,6 +706,29 @@ internal static class TranslationGeneratorUtilities
         return parameters.ToArray();
     }
 
+    /// <summary>
+    /// Maps placeholder names to unique C# parameter identifiers, in the same order. Placeholders that
+    /// sanitize to the same identifier (e.g. <c>1st</c> and <c>_1st</c>) get a numeric suffix.
+    /// </summary>
+    public static string[] GetParameterIdentifiers(string[] parameterNames)
+    {
+        var identifiers = new string[parameterNames.Length];
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        for (var index = 0; index < parameterNames.Length; index++)
+        {
+            var baseName = SanitizeName(parameterNames[index]);
+            var identifier = baseName;
+            for (var suffix = 2; !used.Add(identifier); suffix++)
+            {
+                identifier = baseName + suffix;
+            }
+
+            identifiers[index] = identifier;
+        }
+
+        return identifiers;
+    }
+
     public static bool IsPluralValue(string value) => (value ?? string.Empty).IndexOf('|') >= 0;
 
     public static string[] SplitPluralParts(string value) =>
@@ -745,7 +768,14 @@ internal static class TranslationGeneratorUtilities
             return true;
         }
 
-        expression = $"string.Format(CultureInfo.CurrentCulture, {literal}, {string.Join(", ", parameterNames)})";
+        var expressionBuilder = new StringBuilder("string.Format(global::System.Globalization.CultureInfo.CurrentCulture, ", literal.Length + 96);
+        expressionBuilder.Append(literal);
+        foreach (var identifier in GetParameterIdentifiers(parameterNames))
+        {
+            expressionBuilder.Append(", ").Append(identifier);
+        }
+
+        expression = expressionBuilder.Append(')').ToString();
         return true;
     }
 
