@@ -5,7 +5,6 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using Microsoft.CodeAnalysis;
@@ -259,9 +258,28 @@ internal readonly struct LocationInfo : IEquatable<LocationInfo>
     public LocationInfo(string filePath)
     {
         FilePath = filePath ?? string.Empty;
+        TextSpan = null;
+        LineSpan = null;
     }
 
+    public LocationInfo(string filePath, TextSpan textSpan, LinePositionSpan lineSpan)
+    {
+        FilePath = filePath ?? string.Empty;
+        TextSpan = textSpan;
+        LineSpan = lineSpan;
+    }
+
+    /// <summary>Creates a location for a span of <paramref name="text"/>; the line span is derived from the text.</summary>
+    public static LocationInfo FromSpan(string filePath, SourceText text, TextSpan span) =>
+        new(filePath, span, text.Lines.GetLinePositionSpan(span));
+
     public string FilePath { get; }
+
+    /// <summary>Character span inside the file, or null for a file-level location.</summary>
+    public TextSpan? TextSpan { get; }
+
+    /// <summary>Zero-based line span inside the file, or null for a file-level location (line 0).</summary>
+    public LinePositionSpan? LineSpan { get; }
 
     public Location ToLocation()
     {
@@ -270,17 +288,25 @@ internal readonly struct LocationInfo : IEquatable<LocationInfo>
             return Location.None;
         }
 
-        return Location.Create(
-            FilePath,
-            new TextSpan(0, 0),
-            new LinePositionSpan(new LinePosition(0, 0), new LinePosition(0, 0)));
+        return Location.Create(FilePath, TextSpan ?? default, LineSpan ?? default);
     }
 
-    public bool Equals(LocationInfo other) => string.Equals(FilePath, other.FilePath, StringComparison.Ordinal);
+    public bool Equals(LocationInfo other) =>
+        string.Equals(FilePath, other.FilePath, StringComparison.Ordinal) &&
+        Nullable.Equals(TextSpan, other.TextSpan) &&
+        Nullable.Equals(LineSpan, other.LineSpan);
 
     public override bool Equals(object? obj) => obj is LocationInfo other && Equals(other);
 
-    public override int GetHashCode() => FilePath != null ? StringComparer.Ordinal.GetHashCode(FilePath) : 0;
+    public override int GetHashCode()
+    {
+        unchecked
+        {
+            var hashCode = FilePath != null ? StringComparer.Ordinal.GetHashCode(FilePath) : 0;
+            hashCode = (hashCode * 397) ^ (TextSpan?.GetHashCode() ?? 0);
+            return (hashCode * 397) ^ (LineSpan?.GetHashCode() ?? 0);
+        }
+    }
 }
 
 internal readonly struct GeneratorDiagnosticInfo : IEquatable<GeneratorDiagnosticInfo>
@@ -734,38 +760,45 @@ internal static class TranslationFileParser
                     new LocationInfo(filePath)))));
         }
 
+        // Offsets from the reader index into this string, which is the SourceText's own text
+        // (a leading BOM char, if present, stays in it), so they map 1:1 to SourceText positions.
+        var text = sourceText.ToString();
+        JsonNode root;
         try
         {
-            using var document = JsonDocument.Parse(sourceText.ToString());
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                return LanguageFileParseResult.Failure(new EquatableArray<GeneratorDiagnosticInfo>(
-                    ImmutableArray.Create(new GeneratorDiagnosticInfo(
-                        TranslationGeneratorDiagnostics.RootMustBeObject,
-                        $"Translation file '{filePath}' must contain a JSON object at the root.",
-                        new LocationInfo(filePath)))));
-            }
-
-            var entries = ImmutableArray.CreateBuilder<TranslationEntryModel>();
-            var diagnostics = ImmutableArray.CreateBuilder<GeneratorDiagnosticInfo>();
-            Flatten(document.RootElement, string.Empty, filePath, entries, diagnostics);
-
-            var normalizedEntries = entries
-                .OrderBy(static entry => entry.KeyPath, StringComparer.Ordinal)
-                .ToImmutableArray();
-
-            var language = Path.GetFileNameWithoutExtension(filePath)?.Trim().ToLowerInvariant() ?? string.Empty;
-            var file = new LanguageFileModel(language, filePath, new EquatableArray<TranslationEntryModel>(normalizedEntries));
-            return LanguageFileParseResult.Success(file, new EquatableArray<GeneratorDiagnosticInfo>(diagnostics.ToImmutable()));
+            root = JsonTranslationReader.Parse(text);
         }
-        catch (JsonException exception)
+        catch (JsonSyntaxException exception)
         {
+            var errorSpan = new TextSpan(exception.Offset, 0);
+            var errorPosition = sourceText.Lines.GetLinePosition(exception.Offset);
             return LanguageFileParseResult.Failure(new EquatableArray<GeneratorDiagnosticInfo>(
                 ImmutableArray.Create(new GeneratorDiagnosticInfo(
                     TranslationGeneratorDiagnostics.InvalidJson,
-                    $"Invalid JSON in translation file '{filePath}': {exception.Message}",
+                    $"Invalid JSON in translation file '{filePath}': {exception.Description} (line {errorPosition.Line + 1}, column {errorPosition.Character + 1})",
+                    LocationInfo.FromSpan(filePath, sourceText, errorSpan)))));
+        }
+
+        if (root.Kind != JsonNodeKind.Object)
+        {
+            return LanguageFileParseResult.Failure(new EquatableArray<GeneratorDiagnosticInfo>(
+                ImmutableArray.Create(new GeneratorDiagnosticInfo(
+                    TranslationGeneratorDiagnostics.RootMustBeObject,
+                    $"Translation file '{filePath}' must contain a JSON object at the root.",
                     new LocationInfo(filePath)))));
         }
+
+        var entries = ImmutableArray.CreateBuilder<TranslationEntryModel>();
+        var diagnostics = ImmutableArray.CreateBuilder<GeneratorDiagnosticInfo>();
+        Flatten(root, string.Empty, filePath, sourceText, entries, diagnostics);
+
+        var normalizedEntries = entries
+            .OrderBy(static entry => entry.KeyPath, StringComparer.Ordinal)
+            .ToImmutableArray();
+
+        var language = Path.GetFileNameWithoutExtension(filePath)?.Trim().ToLowerInvariant() ?? string.Empty;
+        var file = new LanguageFileModel(language, filePath, new EquatableArray<TranslationEntryModel>(normalizedEntries));
+        return LanguageFileParseResult.Success(file, new EquatableArray<GeneratorDiagnosticInfo>(diagnostics.ToImmutable()));
     }
 
     public static TranslationGeneratorOptions GetOptions(AnalyzerConfigOptionsProvider optionsProvider)
@@ -781,30 +814,31 @@ internal static class TranslationFileParser
     }
 
     private static void Flatten(
-        JsonElement element,
+        JsonNode node,
         string outerPath,
         string filePath,
+        SourceText sourceText,
         ImmutableArray<TranslationEntryModel>.Builder entries,
         ImmutableArray<GeneratorDiagnosticInfo>.Builder diagnostics)
     {
-        foreach (var property in element.EnumerateObject())
+        foreach (var property in node.Properties)
         {
             var keyPath = string.IsNullOrEmpty(outerPath) ? property.Name : outerPath + "." + property.Name;
-            switch (property.Value.ValueKind)
+            switch (property.Value.Kind)
             {
-                case JsonValueKind.String:
-                    entries.Add(new TranslationEntryModel(keyPath, property.Value.GetString() ?? string.Empty));
+                case JsonNodeKind.String:
+                    entries.Add(new TranslationEntryModel(keyPath, property.Value.StringValue ?? string.Empty));
                     break;
 
-                case JsonValueKind.Object:
-                    Flatten(property.Value, keyPath, filePath, entries, diagnostics);
+                case JsonNodeKind.Object:
+                    Flatten(property.Value, keyPath, filePath, sourceText, entries, diagnostics);
                     break;
 
                 default:
                     diagnostics.Add(new GeneratorDiagnosticInfo(
                         TranslationGeneratorDiagnostics.UnsupportedValue,
                         $"Translation key '{keyPath}' in '{filePath}' must contain a string value or nested object.",
-                        new LocationInfo(filePath)));
+                        LocationInfo.FromSpan(filePath, sourceText, new TextSpan(property.Offset, property.Length))));
                     break;
             }
         }
@@ -885,13 +919,50 @@ internal static class TranslationGeneratorUtilities
         return builder.ToString();
     }
 
-    public static string EscapeXmlDoc(string text) =>
-        (text ?? string.Empty)
-        .Replace("&", "&amp;")
-        .Replace("<", "&lt;")
-        .Replace(">", "&gt;")
-        .Replace("\r", string.Empty)
-        .Replace("\n", "\\n");
+    public static string EscapeXmlDoc(string text)
+    {
+        text ??= string.Empty;
+        var builder = new StringBuilder(text.Length);
+        foreach (var character in text)
+        {
+            switch (character)
+            {
+                case '&':
+                    builder.Append("&amp;");
+                    break;
+                case '<':
+                    builder.Append("&lt;");
+                    break;
+                case '>':
+                    builder.Append("&gt;");
+                    break;
+                case '\r':
+                    break;
+                case '\n':
+                    builder.Append("\\n");
+                    break;
+                default:
+                    // Other line breaks would end the /// comment, and control characters are invisible.
+                    if (NeedsUnicodeEscape(character))
+                    {
+                        builder.Append("\\u").Append(((int)character).ToString("X4"));
+                    }
+                    else
+                    {
+                        builder.Append(character);
+                    }
+
+                    break;
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    // Characters that end a regular string literal or a // comment in C# (U+0085, U+2028, U+2029), and
+    // other control characters, which would be invisible in the generated source.
+    private static bool NeedsUnicodeEscape(char character) =>
+        char.IsControl(character) || character == (char)0x2028 || character == (char)0x2029;
 
     public static string ToCSharpStringLiteral(string value)
     {
@@ -921,7 +992,15 @@ internal static class TranslationGeneratorUtilities
                     builder.Append("\\0");
                     break;
                 default:
-                    builder.Append(character);
+                    if (NeedsUnicodeEscape(character))
+                    {
+                        builder.Append("\\u").Append(((int)character).ToString("X4"));
+                    }
+                    else
+                    {
+                        builder.Append(character);
+                    }
+
                     break;
             }
         }
