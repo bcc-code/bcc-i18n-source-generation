@@ -5,7 +5,6 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using Microsoft.CodeAnalysis;
@@ -150,9 +149,19 @@ internal readonly struct LocationInfo : IEquatable<LocationInfo>
     public LocationInfo(string filePath)
     {
         FilePath = filePath ?? string.Empty;
+        LineSpan = null;
+    }
+
+    public LocationInfo(string filePath, LinePositionSpan lineSpan)
+    {
+        FilePath = filePath ?? string.Empty;
+        LineSpan = lineSpan;
     }
 
     public string FilePath { get; }
+
+    /// <summary>Zero-based line span inside the file, or null for a file-level location (line 0).</summary>
+    public LinePositionSpan? LineSpan { get; }
 
     public Location ToLocation()
     {
@@ -161,17 +170,22 @@ internal readonly struct LocationInfo : IEquatable<LocationInfo>
             return Location.None;
         }
 
-        return Location.Create(
-            FilePath,
-            new TextSpan(0, 0),
-            new LinePositionSpan(new LinePosition(0, 0), new LinePosition(0, 0)));
+        return Location.Create(FilePath, new TextSpan(0, 0), LineSpan ?? default);
     }
 
-    public bool Equals(LocationInfo other) => string.Equals(FilePath, other.FilePath, StringComparison.Ordinal);
+    public bool Equals(LocationInfo other) =>
+        string.Equals(FilePath, other.FilePath, StringComparison.Ordinal) &&
+        Nullable.Equals(LineSpan, other.LineSpan);
 
     public override bool Equals(object? obj) => obj is LocationInfo other && Equals(other);
 
-    public override int GetHashCode() => FilePath != null ? StringComparer.Ordinal.GetHashCode(FilePath) : 0;
+    public override int GetHashCode()
+    {
+        unchecked
+        {
+            return ((FilePath != null ? StringComparer.Ordinal.GetHashCode(FilePath) : 0) * 397) ^ (LineSpan?.GetHashCode() ?? 0);
+        }
+    }
 }
 
 internal readonly struct GeneratorDiagnosticInfo : IEquatable<GeneratorDiagnosticInfo>
@@ -522,38 +536,42 @@ internal static class TranslationFileParser
                     new LocationInfo(filePath)))));
         }
 
+        JsonNode root;
         try
         {
-            using var document = JsonDocument.Parse(sourceText.ToString());
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                return LanguageFileParseResult.Failure(new EquatableArray<GeneratorDiagnosticInfo>(
-                    ImmutableArray.Create(new GeneratorDiagnosticInfo(
-                        TranslationGeneratorDiagnostics.RootMustBeObject,
-                        $"Translation file '{filePath}' must contain a JSON object at the root.",
-                        new LocationInfo(filePath)))));
-            }
-
-            var entries = ImmutableArray.CreateBuilder<TranslationEntryModel>();
-            var diagnostics = ImmutableArray.CreateBuilder<GeneratorDiagnosticInfo>();
-            Flatten(document.RootElement, string.Empty, filePath, entries, diagnostics);
-
-            var normalizedEntries = entries
-                .OrderBy(static entry => entry.KeyPath, StringComparer.Ordinal)
-                .ToImmutableArray();
-
-            var language = Path.GetFileNameWithoutExtension(filePath)?.Trim().ToLowerInvariant() ?? string.Empty;
-            var file = new LanguageFileModel(language, filePath, new EquatableArray<TranslationEntryModel>(normalizedEntries));
-            return LanguageFileParseResult.Success(file, new EquatableArray<GeneratorDiagnosticInfo>(diagnostics.ToImmutable()));
+            root = JsonTranslationReader.Parse(sourceText.ToString());
         }
-        catch (JsonException exception)
+        catch (JsonSyntaxException exception)
         {
             return LanguageFileParseResult.Failure(new EquatableArray<GeneratorDiagnosticInfo>(
                 ImmutableArray.Create(new GeneratorDiagnosticInfo(
                     TranslationGeneratorDiagnostics.InvalidJson,
-                    $"Invalid JSON in translation file '{filePath}': {exception.Message}",
+                    $"Invalid JSON in translation file '{filePath}': {exception.Description} (line {exception.Line + 1}, column {exception.Column + 1})",
+                    new LocationInfo(filePath, new LinePositionSpan(
+                        new LinePosition(exception.Line, exception.Column),
+                        new LinePosition(exception.Line, exception.Column)))))));
+        }
+
+        if (root.Kind != JsonNodeKind.Object)
+        {
+            return LanguageFileParseResult.Failure(new EquatableArray<GeneratorDiagnosticInfo>(
+                ImmutableArray.Create(new GeneratorDiagnosticInfo(
+                    TranslationGeneratorDiagnostics.RootMustBeObject,
+                    $"Translation file '{filePath}' must contain a JSON object at the root.",
                     new LocationInfo(filePath)))));
         }
+
+        var entries = ImmutableArray.CreateBuilder<TranslationEntryModel>();
+        var diagnostics = ImmutableArray.CreateBuilder<GeneratorDiagnosticInfo>();
+        Flatten(root, string.Empty, filePath, entries, diagnostics);
+
+        var normalizedEntries = entries
+            .OrderBy(static entry => entry.KeyPath, StringComparer.Ordinal)
+            .ToImmutableArray();
+
+        var language = Path.GetFileNameWithoutExtension(filePath)?.Trim().ToLowerInvariant() ?? string.Empty;
+        var file = new LanguageFileModel(language, filePath, new EquatableArray<TranslationEntryModel>(normalizedEntries));
+        return LanguageFileParseResult.Success(file, new EquatableArray<GeneratorDiagnosticInfo>(diagnostics.ToImmutable()));
     }
 
     public static TranslationGeneratorOptions GetOptions(AnalyzerConfigOptionsProvider optionsProvider)
@@ -567,22 +585,22 @@ internal static class TranslationFileParser
     }
 
     private static void Flatten(
-        JsonElement element,
+        JsonNode node,
         string outerPath,
         string filePath,
         ImmutableArray<TranslationEntryModel>.Builder entries,
         ImmutableArray<GeneratorDiagnosticInfo>.Builder diagnostics)
     {
-        foreach (var property in element.EnumerateObject())
+        foreach (var property in node.Properties)
         {
             var keyPath = string.IsNullOrEmpty(outerPath) ? property.Name : outerPath + "." + property.Name;
-            switch (property.Value.ValueKind)
+            switch (property.Value.Kind)
             {
-                case JsonValueKind.String:
-                    entries.Add(new TranslationEntryModel(keyPath, property.Value.GetString() ?? string.Empty));
+                case JsonNodeKind.String:
+                    entries.Add(new TranslationEntryModel(keyPath, property.Value.StringValue ?? string.Empty));
                     break;
 
-                case JsonValueKind.Object:
+                case JsonNodeKind.Object:
                     Flatten(property.Value, keyPath, filePath, entries, diagnostics);
                     break;
 
@@ -590,7 +608,9 @@ internal static class TranslationFileParser
                     diagnostics.Add(new GeneratorDiagnosticInfo(
                         TranslationGeneratorDiagnostics.UnsupportedValue,
                         $"Translation key '{keyPath}' in '{filePath}' must contain a string value or nested object.",
-                        new LocationInfo(filePath)));
+                        new LocationInfo(filePath, new LinePositionSpan(
+                            new LinePosition(property.Line, property.Column),
+                            new LinePosition(property.Line, property.Column + property.Length)))));
                     break;
             }
         }

@@ -29,16 +29,10 @@
         <None Include="build/BccCode.I18N.SourceGen.props" Pack="true" PackagePath="buildTransitive/" />
         <None Include="..\..\Readme.md" Pack="true" PackagePath="\" />
         <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
-        <!-- Pack only the explicit generator runtime dependencies needed beyond the compiler host. -->
-        <!-- Todo: is this the correct approach? -->
-        <None Include="$(OutputPath)\System.Text.Json.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" Condition="Exists('$(OutputPath)\System.Text.Json.dll')" />
-        <None Include="$(OutputPath)\System.Text.Encodings.Web.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" Condition="Exists('$(OutputPath)\System.Text.Encodings.Web.dll')" />
-        <None Include="$(OutputPath)\System.Memory.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" Condition="Exists('$(OutputPath)\System.Memory.dll')" />
-        <None Include="$(OutputPath)\System.Buffers.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" Condition="Exists('$(OutputPath)\System.Buffers.dll')" />
-        <None Include="$(OutputPath)\Microsoft.Bcl.AsyncInterfaces.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" Condition="Exists('$(OutputPath)\Microsoft.Bcl.AsyncInterfaces.dll')" />
-        <None Include="$(OutputPath)\System.Runtime.CompilerServices.Unsafe.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" Condition="Exists('$(OutputPath)\System.Runtime.CompilerServices.Unsafe.dll')" />
-        <None Include="$(OutputPath)\System.Numerics.Vectors.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" Condition="Exists('$(OutputPath)\System.Numerics.Vectors.dll')" />
-        <None Include="$(OutputPath)\System.Threading.Tasks.Extensions.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" Condition="Exists('$(OutputPath)\System.Threading.Tasks.Extensions.dll')" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="BccCode.I18N.SourceGen.Tests" />
     </ItemGroup>
 
     <ItemGroup>
@@ -47,7 +41,6 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" PrivateAssets="all" />
-        <PackageReference Include="System.Text.Json" Version="9.0.21" PrivateAssets="all" />
     </ItemGroup>
 
 
