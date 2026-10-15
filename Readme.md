@@ -11,7 +11,7 @@ Add your translation files as `AdditionalFiles` in your `.csproj`. Each file is 
 The JSON files can contain nested objects (mapped to nested static classes) and string values (mapped to properties or constants). Strings support:
 
 - **Interpolation**: `{paramName}` placeholders become method parameters (e.g. `"Hello {name}"` → `Language.hello(object name)`)
-- **Pluralization**: pipe-separated variants `"no items | one item | {count} items"` — the first parameter becomes `int count`, and the correct variant is selected at runtime
+- **Pluralization**: pipe-separated variants `"no items | one item | {count} items"` — the first parameter becomes `int count`, and the variant is selected at runtime with the same rules as vue-i18n. The count is first turned into its absolute value. With two variants, a count of 1 selects the first and every other count the second (`"car | cars"`: 1 is `car`, 0 and 2 are `cars`). With three variants, 0 selects the first, 1 the second and larger counts the third. With four or more, the count is the index and larger counts use the last variant. Each language uses the rule for its own number of variants.
   - A key is pluralized when *any* language uses pipe-separated variants. Languages that use a single form for that key return it for every count. When the fallback language has no plural variants for the key, the count parameter is always named `count` (use `{count}` in the other languages).
 
 ## Generated Classes
@@ -117,6 +117,24 @@ The parameter name is the part before the colon. The same name can appear severa
 
 Format specifiers are .NET-only. If a frontend such as vue-i18n shares the same JSON files, it shows `{date:d}` literally. `LanguageStrings` returns the stored text unchanged, including format specifiers.
 
+## vue-i18n compatibility
+
+Translation files are often shared with a Vue frontend that uses vue-i18n (v9+). The generator understands these parts of the message syntax:
+
+- **Named placeholders**: `{name}` and `{name:format}` (see Formatting).
+- **List placeholders**: `{0}`, `{1}`. They become parameters `_0`, `_1`, in order of first appearance in the fallback text. In a plural message the first placeholder in the fallback text is the `int` count (`"{0} item | {0} items"` gives `item(int _0)`).
+- **Plural rules**: vue-i18n's default rules for 2, 3 and more variants, using the absolute value of the count (see above).
+- **Linked messages**: `@:key`, `@:{'key'}`, and the modifiers `@.lower:key`, `@.upper:key`, `@.capitalize:key` (also with `{'key'}`). A bare key may contain letters, digits, `_`, `-`, `$` and `.`. A trailing `.` ends the sentence and is not part of the key, so `"Press @:common.save."` links `common.save`. `post@bcc.no` is not a link.
+- **Literal interpolation**: `{'text'}` is output as `text`. Use it for `{'@'}`, `{'{'}`, `{'}'}` and `{'|'}`. A `|` inside a literal does not separate plural variants, and an `@` inside a literal does not start a link. Like in vue-i18n, a literal can contain the escapes `\'`, `\\`, `\uXXXX` (4 hex digits) and `\UXXXXXX` (6 hex digits), so `{'It\'s'}` is `It's`. A literal with an invalid escape (a surrogate or a value above U+10FFFF is also invalid) or without an end is not a literal and stays plain text.
+
+Linked messages are resolved when the code is generated, so `Language`, `LocalizedLanguage` and `LanguageStrings` all contain the final text. A link is replaced by the target key's value in the same language, or in the fallback language when that language does not have the key. Links inside the target are resolved too, and placeholders in the target become part of the message and its parameters. Modifiers change the text only, not placeholder names. Capitalize changes the first character of the message when it is text. Keys do not change, so `LanguageKeys` is unaffected.
+
+Warning `I18N010` (Invalid linked message) is reported once per language and key when a link points to an unknown key, is part of a cycle (`a` links `b` and `b` links `a`), or points to a plural message (a target containing `|`). The link text is then kept as written.
+
+Literals in `Language` and `LocalizedLanguage` become plain text. `LanguageStrings` returns the stored text, so it contains resolved links but keeps literals such as `{'@'}` as written. This lets you send the text to a frontend that interprets the same syntax.
+
+Not supported: custom pluralization rules (`pluralizationRules` in vue-i18n), custom `@.modifier` names, and HTML in messages (no escaping or rendering is done). Format specifiers such as `{date:d}` are .NET-only, as described under Formatting.
+
 ## Language matching
 
 File languages are the lowercased file names without extension (`en.json` is `en`, `pt-BR.json` is `pt-br`). `LanguageStrings.ResolveLanguage(CultureInfo)` picks the file language for a culture, and `Language` and `LanguageStrings` both use it with `CultureInfo.CurrentUICulture`.
@@ -213,6 +231,7 @@ With that configuration, the generator emits `MyApp.Localization.Language`, `MyA
 | I18N007 | Warning | A language file is missing keys that exist in the fallback language. One diagnostic per file lists up to 10 keys. |
 | I18N008 | Warning | A language file has keys that do not exist in the fallback language. These keys are not generated in `Language` or `LanguageKeys`. |
 | I18N009 | Warning | A language alias in `I18NLanguageAliases` is malformed or points to a language without a translation file. |
+| I18N010 | Warning | A linked message (`@:key`) points to an unknown key, is part of a cycle or points to a plural message. |
 
 These diagnostics are reported on the JSON files, so `.editorconfig` sections such as `[*.cs]` or `[*.json]` do not change their severity. Use a `.globalconfig` file in the project folder instead (the SDK picks it up automatically):
 

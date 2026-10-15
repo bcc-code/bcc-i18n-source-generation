@@ -1,6 +1,8 @@
 {
     "message": {
         "hello1": "hello world",
+        "saveLabel": "Save",
+        "press": "Press @:message.saveLabel.",
         "hello2": "{msg} world",
         "price": "Price: {amount:N2}",
         "fallbackOnly": "only in the fallback language"

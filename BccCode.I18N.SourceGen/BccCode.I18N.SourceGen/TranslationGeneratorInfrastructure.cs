@@ -138,6 +138,14 @@ internal static class TranslationGeneratorDiagnostics
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor InvalidLinkedMessage = new(
+        id: "I18N010",
+        title: "Invalid linked message",
+        messageFormat: "{0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor LanguageAliasTargetMissing = new(
         id: "I18N009",
         title: "Language alias target missing",
@@ -572,6 +580,9 @@ internal static class TranslationModelSetFactory
             .OrderBy(static file => file.Language, StringComparer.Ordinal)
             .ToImmutableArray();
 
+        // Linked messages are resolved here so that Language, LocalizedLanguage and LanguageStrings all see the final text.
+        uniqueFiles = TranslationLinkResolver.Resolve(uniqueFiles, normalizedFallbackLanguage, diagnosticBuilder);
+
         var hasFallbackFile = false;
         LanguageFileModel fallbackFile = default;
 
@@ -829,8 +840,6 @@ internal static class TranslationGeneratorUtilities
     /// <summary>Name of the parameter that carries the resolved language in the generated translation methods.</summary>
     public const string LanguageParameter = "__language";
 
-    private static readonly Regex PlaceholderRegex = new(@"\{(\s*\w+\s*)(?::([^{}]*))?\}", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
     public const string TranslationMetadataKey = "build_metadata.AdditionalFiles.I18NTranslation";
 
     public static bool IsMarkedAsTranslation(AnalyzerConfigOptionsProvider optionsProvider, AdditionalText file) =>
@@ -921,17 +930,15 @@ internal static class TranslationGeneratorUtilities
 
     public static string[] GetParameterNames(string value, bool isPlural)
     {
-        var matches = PlaceholderRegex.Matches(value ?? string.Empty);
         var parameters = new List<string>();
-        foreach (Match match in matches)
+        foreach (var token in TranslationMessageSyntax.Tokenize(value))
         {
-            var parameter = match.Groups[1].Value.Trim();
-            if (parameters.Contains(parameter, StringComparer.Ordinal))
+            if (token.Kind != MessageTokenKind.Placeholder || parameters.Contains(token.Text, StringComparer.Ordinal))
             {
                 continue;
             }
 
-            parameters.Add(parameter);
+            parameters.Add(token.Text);
         }
 
         if (isPlural && parameters.Count == 0)
@@ -965,13 +972,9 @@ internal static class TranslationGeneratorUtilities
         return identifiers;
     }
 
-    public static bool IsPluralValue(string value) => (value ?? string.Empty).IndexOf('|') >= 0;
+    public static bool IsPluralValue(string value) => TranslationMessageSyntax.IsPlural(value);
 
-    public static string[] SplitPluralParts(string value) =>
-        (value ?? string.Empty)
-        .Split('|')
-        .Select(static part => part.Trim())
-        .ToArray();
+    public static string[] SplitPluralParts(string value) => TranslationMessageSyntax.SplitPlural(value);
 
     public static bool TryCreateFormatExpression(
         string value,
@@ -981,40 +984,52 @@ internal static class TranslationGeneratorUtilities
     {
         value ??= string.Empty;
 
+        // Literals ({'text'}) become plain text. Text is escaped for string.Format, unless the message
+        // has no placeholders and is emitted as a plain string.
         var formatBuilder = new StringBuilder();
-        var currentIndex = 0;
-        foreach (Match match in PlaceholderRegex.Matches(value))
+        var plainBuilder = new StringBuilder();
+        var hasPlaceholder = false;
+        foreach (var token in TranslationMessageSyntax.Tokenize(value))
         {
-            AppendEscapedFormatText(formatBuilder, value.Substring(currentIndex, match.Index - currentIndex));
-
-            var parameterName = match.Groups[1].Value.Trim();
-            var parameterIndex = Array.IndexOf(parameterNames, parameterName);
-            if (parameterIndex < 0)
+            switch (token.Kind)
             {
-                expression = string.Empty;
-                return false;
-            }
+                case MessageTokenKind.Placeholder:
+                    var parameterIndex = Array.IndexOf(parameterNames, token.Text);
+                    if (parameterIndex < 0)
+                    {
+                        expression = string.Empty;
+                        return false;
+                    }
 
-            formatBuilder.Append('{').Append(parameterIndex);
-            if (match.Groups[2].Success)
-            {
-                // A format specifier such as {date:d} is passed through to string.Format.
-                formatBuilder.Append(':').Append(match.Groups[2].Value);
-            }
+                    formatBuilder.Append('{').Append(parameterIndex);
+                    if (token.Format is not null)
+                    {
+                        // A format specifier such as {date:d} is passed through to string.Format.
+                        formatBuilder.Append(':').Append(token.Format);
+                    }
 
-            formatBuilder.Append('}');
-            currentIndex = match.Index + match.Length;
+                    formatBuilder.Append('}');
+                    hasPlaceholder = true;
+                    break;
+                case MessageTokenKind.Literal:
+                    AppendEscapedFormatText(formatBuilder, token.Text);
+                    plainBuilder.Append(token.Text);
+                    break;
+                default:
+                    var text = value.Substring(token.Start, token.Length);
+                    AppendEscapedFormatText(formatBuilder, text);
+                    plainBuilder.Append(text);
+                    break;
+            }
         }
 
-        AppendEscapedFormatText(formatBuilder, value.Substring(currentIndex));
-
-        var literal = ToCSharpStringLiteral(formatBuilder.ToString());
-        if (parameterNames.Length == 0 || value.IndexOf('{') < 0)
+        if (!hasPlaceholder)
         {
-            expression = literal;
+            expression = ToCSharpStringLiteral(plainBuilder.ToString());
             return true;
         }
 
+        var literal = ToCSharpStringLiteral(formatBuilder.ToString());
         var expressionBuilder = new StringBuilder("string.Format(" + providerParameter + ", ", literal.Length + 96);
         expressionBuilder.Append(literal);
         foreach (var identifier in GetParameterIdentifiers(parameterNames))
@@ -1029,15 +1044,16 @@ internal static class TranslationGeneratorUtilities
     public static string[] GetUnsupportedPlaceholders(string value, string[] parameterNames)
     {
         var unsupported = new List<string>();
-        foreach (Match match in PlaceholderRegex.Matches(value ?? string.Empty))
+        foreach (var token in TranslationMessageSyntax.Tokenize(value))
         {
-            var parameterName = match.Groups[1].Value.Trim();
-            if (Array.IndexOf(parameterNames, parameterName) >= 0 || unsupported.Contains(parameterName, StringComparer.Ordinal))
+            if (token.Kind != MessageTokenKind.Placeholder ||
+                Array.IndexOf(parameterNames, token.Text) >= 0 ||
+                unsupported.Contains(token.Text, StringComparer.Ordinal))
             {
                 continue;
             }
 
-            unsupported.Add(parameterName);
+            unsupported.Add(token.Text);
         }
 
         return unsupported.ToArray();

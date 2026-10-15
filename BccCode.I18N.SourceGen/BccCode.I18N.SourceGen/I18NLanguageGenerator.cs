@@ -509,7 +509,10 @@ internal static class I18NLanguageGenerator
 
         if (isPlural)
         {
-            writer.Append('(').Append(identifiers[0]).Append(", ")
+            // vue-i18n uses the absolute value of the count to pick the variant. The count is widened to long
+            // first, so that int.MinValue cannot overflow (also in a checked context). The int itself is used for formatting.
+            var count = identifiers[0];
+            writer.Append("(global::System.Math.Abs((long)").Append(count).Append("), ")
                 .Append(leaf.LanguageParameter).AppendLine(") switch");
             writer.OpenBlock();
 
@@ -573,8 +576,14 @@ internal static class I18NLanguageGenerator
             {
                 writer.Append('_');
             }
+            else if (expressions.Length == 2)
+            {
+                // vue-i18n's rule for two forms: a count of 1 uses the first form, anything else the second.
+                writer.Append('1');
+            }
             else
             {
+                // Three or more forms: the count selects the form, and the last form is used for larger counts.
                 writer.Append(index.ToString());
             }
 

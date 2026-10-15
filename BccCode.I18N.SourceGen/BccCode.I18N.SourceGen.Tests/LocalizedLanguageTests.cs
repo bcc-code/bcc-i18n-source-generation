@@ -53,7 +53,7 @@ public class LocalizedLanguageTests
         var no = new LocalizedLanguage(new CultureInfo("nb-NO"));
         var en = new LocalizedLanguage(new CultureInfo("en-US"));
         return string.Join("|", no.deep.inner.leaf, en.deep.inner.leaf, no.message.greet("Kari"), en.message.greet("Kari"),
-            no.plural.car(0), no.plural.car(3), en.plural.car(0), en.plural.car(5), no.onlyEn);
+            no.plural.car(1), no.plural.car(3), en.plural.car(1), en.plural.car(5), no.onlyEn);
         """);
 
     Assert.Equal("dyp no|deep en|hei Kari|hi Kari|bil|biler|car|cars|only english", result);
@@ -232,7 +232,7 @@ public class LocalizedLanguageTests
         var date = new DateTime(2024, 1, 31);
         var us = new LocalizedLanguage(new CultureInfo("en-US"));
         var nb = new LocalizedLanguage(new CultureInfo("nb-NO"));
-        return string.Join("|", us.when(date), nb.when(date), us.price(1234.5m), nb.price(1234.5m), us.items(1234), nb.items(1234), nb.items(0), us.twice(1234.5), nb.twice(1234.5));
+        return string.Join("|", us.when(date), nb.when(date), us.price(1234.5m), nb.price(1234.5m), us.items(1234), nb.items(1234), nb.items(1), us.twice(1234.5), nb.twice(1234.5));
         """);
 
     var expected = string.Join(
@@ -243,7 +243,7 @@ public class LocalizedLanguageTests
         1234.5m.ToString("N2", nbNo) + " kr",
         1234.ToString("N0", enUs) + " items",
         1234.ToString("N0", nbNo) + " items",
-        "0 item",
+        "1 item",
         1234.5.ToString("N0", enUs) + " and " + 1234.5.ToString("N2", enUs),
         1234.5.ToString("N0", nbNo) + " and " + 1234.5.ToString("N2", nbNo));
     Assert.Equal(expected, result);
@@ -318,7 +318,7 @@ public class LocalizedLanguageTests
     Assert.Equal("norsk|only english|null|missing|english {x:N2}|english {x:N2}", result);
   }
 
-  private static string Run(TestAdditionalFile[] files, string body)
+  internal static string Run(TestAdditionalFile[] files, string body, bool checkedOverflow = false)
   {
     var (_, runResult, compilation) = GeneratorTestHelpers.RunGenerator(
         new I18NSourceGenerator(),
@@ -327,11 +327,15 @@ public class LocalizedLanguageTests
     Assert.DoesNotContain(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult), static d => d.Severity == DiagnosticSeverity.Error);
 
     var probe = CSharpSyntaxTree.ParseText(
-        "using System; using System.Globalization;\n" +
+        "using System; using System.Globalization; using System.Linq;\n" +
         "namespace BccCode.I18N.Tests.Generated { public static class Probe { public static string Run() {\n" +
         body +
         "\n} } }");
     compilation = compilation.AddSyntaxTrees(probe);
+    if (checkedOverflow)
+    {
+      compilation = compilation.WithOptions(((CSharpCompilationOptions)compilation.Options).WithOverflowChecks(true));
+    }
 
     using var stream = new MemoryStream();
     var emitResult = compilation.Emit(stream);
