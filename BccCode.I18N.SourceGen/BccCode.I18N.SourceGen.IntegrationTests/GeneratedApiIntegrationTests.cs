@@ -102,4 +102,56 @@ public class GeneratedApiIntegrationTests
         Assert.Equal("only in the fallback language", Language.message.fallbackOnly);
         Assert.Null(LanguageStrings.GetStringOrNull("message.unknown"));
     }
+
+    [Fact]
+    public void LocalizedLanguage_uses_the_given_culture_without_changing_the_thread_culture()
+    {
+        CultureInfo.CurrentUICulture = new CultureInfo("en");
+
+        var norwegian = new LocalizedLanguage(new CultureInfo("nb-NO"));
+        var english = new LocalizedLanguage(new CultureInfo("en-US"));
+        var unknown = new LocalizedLanguage(new CultureInfo("de-DE"));
+
+        Assert.Equal("hei verden", norwegian.message.hello1);
+        Assert.Equal("hello world", english.message.hello1);
+        Assert.Equal("hello world", unknown.message.hello1);
+        Assert.Equal("x verden", norwegian.message.hello2("x"));
+        Assert.Equal("3 epler", norwegian.plural.apple(3));
+        Assert.Equal("3 apples", english.plural.apple(3));
+        Assert.Equal("only in the fallback language", norwegian.message.fallbackOnly);
+        Assert.Equal("hello world", Language.message.hello1);
+        Assert.Equal("en", CultureInfo.CurrentUICulture.Name);
+    }
+
+    [Fact]
+    public void Default_LocalizedLanguage_uses_the_fallback_language()
+    {
+        CultureInfo.CurrentUICulture = new CultureInfo("nb-NO");
+
+        Assert.Equal("hello world", default(LocalizedLanguage).message.hello1);
+    }
+
+    [Fact]
+    public void Format_specifiers_are_applied_with_the_culture_of_the_language()
+    {
+        var norwegian = new CultureInfo("nb-NO");
+        var american = new CultureInfo("en-US");
+
+        Assert.Equal("Pris: " + 1234.5m.ToString("N2", norwegian), new LocalizedLanguage(norwegian).message.price(1234.5m));
+        Assert.Equal("Price: 1,234.50", new LocalizedLanguage(american).message.price(1234.5m));
+
+        CultureInfo.CurrentUICulture = american;
+        CultureInfo.CurrentCulture = norwegian;
+        Assert.Equal("Price: " + 1234.5m.ToString("N2", norwegian), Language.message.price(1234.5m));
+    }
+
+    [Fact]
+    public void LanguageStrings_culture_overloads_do_not_depend_on_the_current_culture()
+    {
+        CultureInfo.CurrentUICulture = new CultureInfo("en");
+
+        Assert.Equal("hei verden", LanguageStrings.GetString("message.hello1", new CultureInfo("nb-NO")));
+        Assert.Equal("only in the fallback language", LanguageStrings.GetString("message.fallbackOnly", new CultureInfo("nb-NO")));
+        Assert.Null(LanguageStrings.GetStringOrNull("message.unknown", new CultureInfo("nb-NO")));
+    }
 }

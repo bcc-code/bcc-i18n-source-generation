@@ -823,7 +823,13 @@ internal static class TranslationGeneratorUtilities
 {
     public const string DefaultCountParameter = "count";
 
-    private static readonly Regex PlaceholderRegex = new(@"\{(\s*\w+\s*)\}", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    /// <summary>Name of the parameter that carries the format provider in the generated translation methods.</summary>
+    public const string FormatProviderParameter = "__provider";
+
+    /// <summary>Name of the parameter that carries the resolved language in the generated translation methods.</summary>
+    public const string LanguageParameter = "__language";
+
+    private static readonly Regex PlaceholderRegex = new(@"\{(\s*\w+\s*)(?::([^{}]*))?\}", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public const string TranslationMetadataKey = "build_metadata.AdditionalFiles.I18NTranslation";
 
@@ -967,7 +973,11 @@ internal static class TranslationGeneratorUtilities
         .Select(static part => part.Trim())
         .ToArray();
 
-    public static bool TryCreateFormatExpression(string value, string[] parameterNames, out string expression)
+    public static bool TryCreateFormatExpression(
+        string value,
+        string[] parameterNames,
+        out string expression,
+        string providerParameter = FormatProviderParameter)
     {
         value ??= string.Empty;
 
@@ -985,7 +995,14 @@ internal static class TranslationGeneratorUtilities
                 return false;
             }
 
-            formatBuilder.Append('{').Append(parameterIndex).Append('}');
+            formatBuilder.Append('{').Append(parameterIndex);
+            if (match.Groups[2].Success)
+            {
+                // A format specifier such as {date:d} is passed through to string.Format.
+                formatBuilder.Append(':').Append(match.Groups[2].Value);
+            }
+
+            formatBuilder.Append('}');
             currentIndex = match.Index + match.Length;
         }
 
@@ -998,7 +1015,7 @@ internal static class TranslationGeneratorUtilities
             return true;
         }
 
-        var expressionBuilder = new StringBuilder("string.Format(global::System.Globalization.CultureInfo.CurrentCulture, ", literal.Length + 96);
+        var expressionBuilder = new StringBuilder("string.Format(" + providerParameter + ", ", literal.Length + 96);
         expressionBuilder.Append(literal);
         foreach (var identifier in GetParameterIdentifiers(parameterNames))
         {

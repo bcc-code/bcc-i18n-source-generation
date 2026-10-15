@@ -26,6 +26,10 @@ internal static class I18NLanguageDictGenerator
 
         writer.AppendLine("public static string GetString(string key) => GetStringOrNull(key) ?? key;");
         writer.AppendLine();
+        writer.AppendLine("public static string GetString(string key, global::System.Globalization.CultureInfo culture) => GetStringOrNull(key, culture) ?? key;");
+        writer.AppendLine();
+        writer.AppendLine("public static string? GetStringOrNull(string key) => GetStringOrNull(key, global::System.Globalization.CultureInfo.CurrentUICulture);");
+        writer.AppendLine();
 
         WriteResolveLanguage(writer, orderedFiles, fallbackLanguage, aliases);
         writer.AppendLine();
@@ -33,9 +37,9 @@ internal static class I18NLanguageDictGenerator
         // The current culture's language is resolved first. A key missing from it is looked up in the
         // fallback language, which matches the members of the Language class.
         var fallbackMethod = GetLookupMethodName(fallbackIndex);
-        writer.AppendLine("public static string? GetStringOrNull(string key) =>");
+        writer.AppendLine("public static string? GetStringOrNull(string key, global::System.Globalization.CultureInfo culture) =>");
         writer.Indent();
-        writer.AppendLine("ResolveLanguage(global::System.Globalization.CultureInfo.CurrentUICulture) switch");
+        writer.AppendLine("ResolveLanguage(culture) switch");
         writer.OpenBlock();
         for (var index = 0; index < orderedFiles.Length; index++)
         {
