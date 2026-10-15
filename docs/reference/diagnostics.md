@@ -2,7 +2,7 @@
 
 The generator reports these diagnostics. All have the category `BccCode.I18N.SourceGen` and are enabled by default.
 
-Diagnostics about a file are reported at the start of that file (line 1, column 1). I18N004 and I18N009 have no file location.
+I18N001 is reported at the position of the JSON error and I18N003 at the property with the unsupported value. Other diagnostics about a file are reported at the start of that file (line 1, column 1). I18N004 and I18N009 have no file location.
 
 To change a severity, see [Change the severity of a diagnostic](../how-to/change-diagnostic-severity.md).
 
@@ -23,7 +23,7 @@ To change a severity, see [Change the severity of a diagnostic](../how-to/change
 
 **Invalid translation file** — Error
 
-**Cause:** A translation file could not be read, or is not valid JSON. The message includes the parser's description of the problem.
+**Cause:** A translation file could not be read, or is not valid JSON. The JSON rules are strict: no comments, no trailing commas, and no unpaired surrogate characters in strings. The message describes the problem.
 
 **Effect:** The file is skipped. If it is the fallback file, I18N004 follows and nothing is generated.
 
