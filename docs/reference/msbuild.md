@@ -1,0 +1,77 @@
+# Reference: MSBuild properties and item metadata
+
+The generator reads three MSBuild properties and one item metadata value. The NuGet package's `build/BccCode.I18N.SourceGen.props` (also shipped as `buildTransitive/`) makes them visible to the compiler with `CompilerVisibleProperty` and `CompilerVisibleItemMetadata`.
+
+## Properties
+
+| Property | Default | Description |
+| --- | --- | --- |
+| `FallbackLanguage` | `no` (set by the props file). `en` if the props file is not imported. | The language used when no translation file matches a culture, and for keys that a language does not contain. Must equal the name of one translation file without `.json`. Compared case-insensitively; leading and trailing whitespace is ignored. |
+| `GeneratedNamespace` | See below. | Namespace of all generated types. Empty means the global namespace. |
+| `I18NLanguageAliases` | Empty | Extra language aliases as `culture=language` pairs separated by `;`, for example `nb=no;nn=no;pt-pt=pt`. |
+
+### `GeneratedNamespace` default
+
+The props file sets `GeneratedNamespace` to `$(RootNamespace)` when it is empty. MSBuild evaluates that value at the point where the props file is imported:
+
+- With a `PackageReference`, NuGet imports the props file before the project file body, where `RootNamespace` is usually not set yet. The generated types then end up in the global namespace.
+- With a `ProjectReference` and an `<Import>` at the top of the project file, `RootNamespace` has the SDK default (the project name) at that point. A `RootNamespace` set later in the project file is not used.
+
+Set `GeneratedNamespace` explicitly to get a predictable namespace.
+
+### `I18NLanguageAliases` format
+
+- Entries are separated by `;`. Each entry is `source=target`.
+- Names are trimmed and compared case-insensitively. Empty entries are ignored.
+- If the same source appears twice, the last entry wins.
+- An entry without `=`, or with an empty side, is malformed and reported as [I18N009](diagnostics.md#i18n009).
+- An entry whose target has no translation file is reported as [I18N009](diagnostics.md#i18n009) and has no effect.
+- An entry replaces the built-in alias with the same source.
+
+Built-in aliases, used when the project does not override them:
+
+| Source | Target |
+| --- | --- |
+| `nb` | `no` |
+| `nn` | `no` |
+| `no` | `nb` |
+
+An alias (built-in or configured) is only used when its target has a translation file and its source does not. Built-in aliases whose target has no file are ignored without a diagnostic.
+
+## Item metadata
+
+| Item | Metadata | Values | Description |
+| --- | --- | --- | --- |
+| `AdditionalFiles` | `I18NTranslation` | `true` (case-insensitive) | Marks the file as a translation file. |
+
+Rules for selecting translation files:
+
+1. Only `AdditionalFiles` whose path ends with `.json` (case-insensitive) are considered.
+2. If at least one of them has `I18NTranslation="true"`, only the marked files are translation files.
+3. If none is marked, every `.json` file in `AdditionalFiles` is a translation file.
+
+The language of a file is its file name without the extension, trimmed and lowercased: `en.json` is `en`, `pt-BR.json` is `pt-br`. The folder is not part of the language.
+
+## Related standard properties
+
+These are not specific to the generator but are useful with it:
+
+| Property | Use |
+| --- | --- |
+| `EmitCompilerGeneratedFiles` | `true` writes the generated `.g.cs` files to `obj/<configuration>/<tfm>/generated/` so you can read them. |
+| `NoWarn`, `WarningsAsErrors` | Change how the I18N diagnostics affect the build. See [Change the severity of a diagnostic](../how-to/change-diagnostic-severity.md). |
+| `LangVersion` | The generated code needs C# 8 or later. |
+
+## Example
+
+```xml
+<PropertyGroup>
+  <FallbackLanguage>en</FallbackLanguage>
+  <GeneratedNamespace>MyApp.Localization</GeneratedNamespace>
+  <I18NLanguageAliases>nb=no;nn=no</I18NLanguageAliases>
+</PropertyGroup>
+
+<ItemGroup>
+  <AdditionalFiles Include="Translations\*.json" I18NTranslation="true" />
+</ItemGroup>
+```
