@@ -1,0 +1,17 @@
+<Project>
+  <!-- NuGet metadata, only used by the packable generator project. -->
+  <PropertyGroup>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/bcc-code/bcc-i18n-source-generation</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/bcc-code/bcc-i18n-source-generation</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>i18n;localization;translations;source-generator;roslyn</PackageTags>
+  </PropertyGroup>
+
+  <!-- Source Link (built into the .NET SDK) and reproducible builds in CI. -->
+  <PropertyGroup>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+</Project>
