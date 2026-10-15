@@ -910,7 +910,11 @@ internal static class TranslationGeneratorUtilities
 
     public static string[] SplitPluralParts(string value) => TranslationMessageSyntax.SplitPlural(value);
 
-    public static bool TryCreateFormatExpression(string value, string[] parameterNames, out string expression)
+    public static bool TryCreateFormatExpression(
+        string value,
+        string[] parameterNames,
+        out string expression,
+        string providerParameter = FormatProviderParameter)
     {
         value ??= string.Empty;
 
@@ -960,7 +964,7 @@ internal static class TranslationGeneratorUtilities
         }
 
         var literal = ToCSharpStringLiteral(formatBuilder.ToString());
-        var expressionBuilder = new StringBuilder("string.Format(" + FormatProviderParameter + ", ", literal.Length + 96);
+        var expressionBuilder = new StringBuilder("string.Format(" + providerParameter + ", ", literal.Length + 96);
         expressionBuilder.Append(literal);
         foreach (var identifier in GetParameterIdentifiers(parameterNames))
         {
