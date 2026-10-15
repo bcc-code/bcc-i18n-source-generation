@@ -18,9 +18,13 @@
         <Compile Include="..\BccCode.I18N.SourceGen.IntegrationTests\GeneratedApiIntegrationTests.cs"
                  Link="GeneratedApiIntegrationTests.cs" />
         <AdditionalFiles Include="..\BccCode.I18N.SourceGen.IntegrationTests\no.json"
-                         Link="no.json" />
+                         Link="no.json"
+                         I18NTranslation="true" />
         <AdditionalFiles Include="..\BccCode.I18N.SourceGen.IntegrationTests\en.json"
-                         Link="en.json" />
+                         Link="en.json"
+                         I18NTranslation="true" />
+        <AdditionalFiles Include="..\BccCode.I18N.SourceGen.IntegrationTests\unrelated.json"
+                         Link="unrelated.json" />
     </ItemGroup>
 
     <ItemGroup>

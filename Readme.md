@@ -71,10 +71,16 @@ In your `.csproj`, include JSON files as `AdditionalFiles`:
 
 ```xml
 <ItemGroup>
-  <AdditionalFiles Include="no.json" />
-  <AdditionalFiles Include="en.json" />
+  <AdditionalFiles Include="no.json" I18NTranslation="true" />
+  <AdditionalFiles Include="en.json" I18NTranslation="true" />
 </ItemGroup>
 ```
+
+Mark translation files with `I18NTranslation="true"`. When at least one `AdditionalFiles` item is marked, only marked `.json` files are read as translations. Other JSON files added as `AdditionalFiles` (for example configuration for other analyzers) are ignored.
+
+If no file is marked, every `.json` file in `AdditionalFiles` is treated as a translation file, as in earlier versions. Marking your files is recommended so that unrelated JSON files are not parsed as translations.
+
+The NuGet package registers the `I18NTranslation` metadata automatically. If you use a `ProjectReference` and import `build/BccCode.I18N.SourceGen.props` yourself, that import makes the metadata visible to the generator.
 
 ### How to configure the fallback language
 

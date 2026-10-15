@@ -8,6 +8,7 @@
   <ItemGroup>
     <CompilerVisibleProperty Include="FallbackLanguage" />
     <CompilerVisibleProperty Include="GeneratedNamespace" />
+    <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="I18NTranslation" />
   </ItemGroup>
 </Project>
 

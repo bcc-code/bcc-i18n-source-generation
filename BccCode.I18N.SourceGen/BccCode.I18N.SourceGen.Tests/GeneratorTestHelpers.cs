@@ -93,6 +93,7 @@ internal static class GeneratorTestHelpers
     private sealed class TestAnalyzerConfigOptionsProvider : AnalyzerConfigOptionsProvider
     {
         private readonly TestAnalyzerConfigOptions _globalOptions;
+        private readonly Dictionary<string, string> _globalValues;
 
         public TestAnalyzerConfigOptionsProvider(string? fallbackLanguage)
         {
@@ -104,6 +105,7 @@ internal static class GeneratorTestHelpers
 
             options["build_property.GeneratedNamespace"] = "BccCode.I18N.Tests.Generated";
 
+            _globalValues = options;
             _globalOptions = new TestAnalyzerConfigOptions(options);
         }
 
@@ -111,7 +113,19 @@ internal static class GeneratorTestHelpers
 
         public override AnalyzerConfigOptions GetOptions(SyntaxTree tree) => _globalOptions;
 
-        public override AnalyzerConfigOptions GetOptions(AdditionalText textFile) => _globalOptions;
+        public override AnalyzerConfigOptions GetOptions(AdditionalText textFile)
+        {
+            if (textFile is not TestAdditionalFile { TranslationMetadata: { } metadata })
+            {
+                return _globalOptions;
+            }
+
+            var merged = new Dictionary<string, string>(_globalValues, StringComparer.OrdinalIgnoreCase)
+            {
+                ["build_metadata.AdditionalFiles.I18NTranslation"] = metadata
+            };
+            return new TestAnalyzerConfigOptions(merged);
+        }
     }
 
     private sealed class TestAnalyzerConfigOptions : AnalyzerConfigOptions
