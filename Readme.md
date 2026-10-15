@@ -147,7 +147,9 @@ The arguments are matched to the parameters in the same order as the parameters 
 - Placeholders are replaced by `string.Format`-style formatting of the argument with the culture as format provider, and `{name:format}` is honored.
 - `{'text'}` becomes `text`.
 - A placeholder without a matching argument stays as written, and an unknown key returns the key.
-- For a plural message the first argument is the count (any integral or floating point number). The variant is selected with the vue-i18n rules per number of variants (see below). Without a numeric first argument the count is 1.
+- For a plural message the first argument is the count (any integral or floating point number, fractions are not rounded). The variant is selected with the vue-i18n rules per number of variants (see below): with two variants only exactly 1 selects the first, with three only exactly 0 and 1 select the first and second, and with more variants an integral count is the index and a fractional count uses the last variant. Without a numeric first argument the count is 1.
+- Like the `Language` members, a language whose message uses placeholders that the key does not have (I18N006) is skipped as a whole, and the fallback language's message is used.
+- Links that could not be resolved (I18N010) are kept as written.
 
 Use `Language` or `LocalizedLanguage` when you can, because they check the parameters at compile time.
 
@@ -156,7 +158,7 @@ Use `Language` or `LocalizedLanguage` when you can, because they check the param
 When the project references `Microsoft.Extensions.Localization.Abstractions` (directly or through `Microsoft.Extensions.Localization`), the generator also emits `LanguageStringLocalizer` and `LanguageStringLocalizerFactory` in the generated namespace. Nothing is generated when the package is not referenced.
 
 - `new LanguageStringLocalizer()` uses the current UI culture at the time of each call, and `new LanguageStringLocalizer(culture)` always uses that culture.
-- `localizer["key"]` returns the stored text, with `ResourceNotFound` set (and the key as value) when the key is unknown. `localizer["key", args]` formats the text with `LanguageStrings.Format`.
+- `localizer["key"]` returns the stored text, with `ResourceNotFound` set (and the key as value) when the key is unknown. `localizer["key", args]` formats the text like `LanguageStrings.Format`, with one difference: a numeric placeholder `{n}` is bound to `args[n]`, because callers such as DataAnnotations pass their arguments by index (for example `StringLength` with `Between {2} and {1}: {0}` gets the display name, maximum and minimum). A placeholder whose index is not passed stays as written. Named placeholders use the order of the parameters of the `Language` member, as in `Format`.
 - `GetAllStrings(includeParentCultures)` returns `LanguageStrings.GetAllStrings(culture, includeParentCultures)`, so `true` adds the fallback language strings the language lacks.
 - `WithCulture` is generated only for versions of the abstractions that still declare it (2.x and 3.x).
 - `LanguageStringLocalizerFactory` returns a `LanguageStringLocalizer` for every resource type, because the whole application shares one set of translation files.

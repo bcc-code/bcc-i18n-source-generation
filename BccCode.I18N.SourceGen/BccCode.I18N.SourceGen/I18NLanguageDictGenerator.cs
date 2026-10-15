@@ -196,13 +196,13 @@ internal static class I18NLanguageDictGenerator
         writer.AppendLine("/// </summary>");
         writer.AppendLine("public static string Format(string key, params object?[] args) =>");
         writer.Indent();
-        writer.AppendLine("FormatCore(key, ResolveLanguage(global::System.Globalization.CultureInfo.CurrentUICulture), global::System.Globalization.CultureInfo.CurrentCulture, args);");
+        writer.AppendLine("FormatCore(key, ResolveLanguage(global::System.Globalization.CultureInfo.CurrentUICulture), global::System.Globalization.CultureInfo.CurrentCulture, args, false);");
         writer.Outdent();
         writer.AppendLine();
         writer.AppendLine("/// <summary>Like <c>Format(key, args)</c>, but the language and the formatting both use <paramref name=\"culture\"/>.</summary>");
         writer.AppendLine("public static string Format(string key, global::System.Globalization.CultureInfo culture, params object?[] args) =>");
         writer.Indent();
-        writer.AppendLine("FormatCore(key, ResolveLanguage(culture), culture, args);");
+        writer.AppendLine("FormatCore(key, ResolveLanguage(culture), culture, args, false);");
         writer.Outdent();
         writer.AppendLine();
 
@@ -238,6 +238,52 @@ internal static class I18NLanguageDictGenerator
         }
 
         writer.AppendLine("_ => null,");
+        writer.CloseBlock(";");
+        writer.Outdent();
+        writer.AppendLine();
+
+        // A language whose message uses placeholders that the key does not have is skipped as a whole by the
+        // Language members (I18N006). Format does the same, so it needs to know these (language, key) pairs.
+        var fallbackParameters = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        foreach (var entry in DistinctByKeyPath(fallbackFile.Entries))
+        {
+            fallbackParameters[entry.KeyPath] = TranslationGeneratorUtilities.GetKeyParameters(entry.Value, valuesByKey[entry.KeyPath], out _);
+        }
+
+        writer.AppendLine("private static bool HasUnsupportedPlaceholders(string key, string language) =>");
+        writer.Indent();
+        writer.AppendLine("language switch");
+        writer.OpenBlock();
+        foreach (var file in orderedFiles)
+        {
+            if (string.Equals(file.Language, fallbackFile.Language, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var unsupportedKeys = DistinctByKeyPath(file.Entries)
+                .Where(entry => fallbackParameters.TryGetValue(entry.KeyPath, out var parameters)
+                    && TranslationGeneratorUtilities.GetUnsupportedPlaceholders(entry.Value, parameters).Length > 0)
+                .Select(static entry => entry.KeyPath)
+                .OrderBy(static key => key, StringComparer.Ordinal)
+                .ToArray();
+            if (unsupportedKeys.Length == 0)
+            {
+                continue;
+            }
+
+            writer.Append(TranslationGeneratorUtilities.ToCSharpStringLiteral(file.Language)).AppendLine(" => key switch");
+            writer.OpenBlock();
+            foreach (var key in unsupportedKeys)
+            {
+                writer.Append(TranslationGeneratorUtilities.ToCSharpStringLiteral(key)).AppendLine(" => true,");
+            }
+
+            writer.AppendLine("_ => false,");
+            writer.CloseBlock(",");
+        }
+
+        writer.AppendLine("_ => false,");
         writer.CloseBlock(";");
         writer.Outdent();
         writer.AppendLine();

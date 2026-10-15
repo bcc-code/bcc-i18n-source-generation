@@ -90,8 +90,8 @@ internal static class I18NStringLocalizerGenerator
         writer.Append("return new ").Append(Localization).AppendLine("LocalizedString(name, name, true);");
         writer.CloseBlock();
         writer.AppendLine();
-        writer.Append("var formatted = _culture == null ? ").Append(strings).Append(".Format(name, arguments) : ").Append(strings)
-            .AppendLine(".Format(name, _culture, arguments);");
+        // Callers such as DataAnnotations pass the arguments by index for numeric placeholders ({0}, {1}, ...).
+        writer.Append("var formatted = ").Append(strings).AppendLine(".FormatByIndex(name, _culture, arguments);");
         writer.Append("return new ").Append(Localization).AppendLine("LocalizedString(name, formatted, false);");
         writer.CloseBlock();
         writer.CloseBlock();

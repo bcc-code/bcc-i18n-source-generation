@@ -207,6 +207,99 @@ public class LanguageStringsApiTests
   }
 
   [Fact]
+  public void Localizer_binds_numeric_placeholders_by_index_and_named_placeholders_by_order()
+  {
+    var result = LocalizedLanguageTests.Run(
+        [
+            new TestAdditionalFile(
+                "./en.json",
+                """{ "range": "Between {2} and {1}: {0}", "greet": "Hi {name}", "fmt": "{1:N1} of {0}" }"""),
+            new TestAdditionalFile("./no.json", """{ "range": "Mellom {2} og {1}: {0}" }""")
+        ],
+        """
+        var en = new LanguageStringLocalizer(new CultureInfo("en-US"));
+        var nb = new LanguageStringLocalizer(new CultureInfo("nb-NO"));
+        return string.Join("|", en["range", "Name", 10, 1].Value, en["range", "Name"].Value, en["range", "Name", 10].Value,
+            en["range", "N", 10, 1, 99].Value, nb["range", "Navn", 10, 1].Value, en["greet", "Kari"].Value, en["fmt", "x", 1234.5].Value,
+            LanguageStrings.Format("range", new CultureInfo("en-US"), "a", "b", "c"));
+        """,
+        referenceLocalization: true);
+
+    Assert.Equal(
+        "Between 1 and 10: Name|Between {2} and {1}: Name|Between {2} and 10: Name|Between 1 and 10: N|Mellom 1 og 10: Navn|Hi Kari|1,234.5 of x|Between a and b: c",
+        result);
+  }
+
+  [Fact]
+  public void Format_skips_a_language_with_unsupported_placeholders_like_the_language_members()
+  {
+    var result = LocalizedLanguageTests.Run(
+        [
+            new TestAdditionalFile("./en.json", """{ "greet": "Hi {name}", "pl": "{name} one | {name} many", "ok": "a {n}" }"""),
+            new TestAdditionalFile("./no.json", """{ "greet": "Hei {other}", "pl": "{x} en | {name} mange", "ok": "b {n}" }""")
+        ],
+        """
+        var nb = new CultureInfo("nb-NO");
+        var language = new LocalizedLanguage(nb);
+        return string.Join("|", LanguageStrings.Format("greet", nb, "Kari"), language.greet("Kari"), LanguageStrings.Format("pl", nb, 2),
+            language.pl(2), LanguageStrings.Format("ok", nb, 1), language.ok(1), LanguageStrings.GetString("greet", nb));
+        """);
+
+    Assert.Equal("Hi Kari|Hi Kari|2 many|2 many|b 1|b 1|Hei {other}", result);
+  }
+
+  [Fact]
+  public void Format_keeps_fractional_counts_for_plural_selection()
+  {
+    var result = LocalizedLanguageTests.Run(
+        [new TestAdditionalFile("./en.json", """{ "two": "car | cars", "three": "none | one | many", "four": "z | o | t | many" }""")],
+        """
+        var c = CultureInfo.InvariantCulture;
+        string F(string key, object count) => LanguageStrings.Format(key, c, count);
+        return string.Join("|",
+            string.Join(",", F("two", 0.6), F("two", 1.2d), F("two", 1.2m), F("two", 1.0m), F("two", 1.0d), F("two", -1.0), F("two", 0.6f)),
+            string.Join(",", F("three", 0.6), F("three", 0.0), F("three", 1.0m), F("three", 1.2), F("three", -0.5m)),
+            string.Join(",", F("four", 0.0), F("four", 1.0), F("four", 2.0), F("four", 1.5), F("four", 2.5m), F("four", 3.0), F("four", 7)));
+        """);
+
+    Assert.Equal("cars,cars,cars,car,car,car,cars|many,none,one,many,many|z,o,t,many,many,many,many", result);
+  }
+
+  [Fact]
+  public void Format_keeps_unresolved_links_intact_like_the_language_members()
+  {
+    var result = LocalizedLanguageTests.Run(
+        [
+            new TestAdditionalFile(
+                "./en.json",
+                """
+                {
+                  "a": "x @:missing y",
+                  "b": "@:{'missing'}",
+                  "c": "@.upper:missing.",
+                  "pl": "one | two",
+                  "e": "see @:pl",
+                  "cy1": "@:cy2",
+                  "cy2": "@:cy1",
+                  "f": "@:{'missing|x'} | other",
+                  "g": "mail post@bcc.no and {'@'}:x"
+                }
+                """)
+        ],
+        """
+        var c = CultureInfo.InvariantCulture;
+        string F(string key, params object[] args) => LanguageStrings.Format(key, c, args);
+        var keys = new[] { "a", "b", "c", "e", "cy1", "cy2", "g" };
+        var same = keys.All(k => F(k) == (string)typeof(Language).GetProperty(k)!.GetValue(null)!);
+        return string.Join("|", same, F("a"), F("b"), F("c"), F("e"), F("cy1"), F("f", 1), Language.f(1), F("f", 2), F("g"));
+        """);
+
+    Assert.Equal(
+        "True|x @:missing y|@:{'missing'}|@.upper:missing.|see @:pl|@:cy1|@:{'missing|x'}|@:{'missing|x'}|other|mail post@bcc.no and @:x",
+        result);
+  }
+
+  [Fact]
   public void Format_selects_plural_forms_with_the_vue_rules_per_number_of_forms()
   {
     var result = Run(

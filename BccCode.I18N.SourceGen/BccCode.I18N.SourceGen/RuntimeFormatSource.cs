@@ -9,24 +9,66 @@ namespace BccCode.I18N.SourceGen;
 /// </summary>
 internal static class RuntimeFormatSource
 {
-    public const string Code = @"private static string FormatCore(string key, string language, global::System.IFormatProvider? provider, object?[]? args)
+    public const string Code = @"// Arguments of a numeric placeholder ({0}) that the caller did not pass.
+private sealed class MissingArgument
 {
-    var text = GetStringOrNullByLanguage(key, language);
+}
+
+// byIndex binds a numeric placeholder {n} to args[n] (as IStringLocalizer callers pass them). Otherwise the
+// arguments follow the parameter order of the Language member for the key.
+private static string FormatCore(string key, string language, global::System.IFormatProvider? provider, object?[]? args, bool byIndex)
+{
+    // Like the Language members, a language whose message uses placeholders that the key does not have
+    // is skipped as a whole in favor of the fallback language.
+    var text = GetStringOrNullByLanguage(key, HasUnsupportedPlaceholders(key, language) ? FallbackLanguage : language);
     if (text == null)
     {
         return key;
     }
 
-    return Substitute(
-        SelectForm(text, args ?? global::System.Array.Empty<object?>()),
-        GetParameterNames(key),
-        args ?? global::System.Array.Empty<object?>(),
-        provider);
+    var names = GetParameterNames(key);
+    var arguments = args ?? global::System.Array.Empty<object?>();
+    if (byIndex)
+    {
+        arguments = MapArgumentsByIndex(names, arguments);
+    }
+
+    return Substitute(SelectForm(text, arguments), names, arguments, provider);
+}
+
+internal static string FormatByIndex(string key, global::System.Globalization.CultureInfo? culture, object?[]? args) =>
+    culture == null
+        ? FormatCore(key, ResolveLanguage(global::System.Globalization.CultureInfo.CurrentUICulture), global::System.Globalization.CultureInfo.CurrentCulture, args, true)
+        : FormatCore(key, ResolveLanguage(culture), culture, args, true);
+
+private static object?[] MapArgumentsByIndex(string[]? names, object?[] args)
+{
+    if (names == null)
+    {
+        return args;
+    }
+
+    var mapped = new object?[names.Length];
+    for (var index = 0; index < names.Length; index++)
+    {
+        int position;
+        if (int.TryParse(names[index], global::System.Globalization.NumberStyles.None, global::System.Globalization.CultureInfo.InvariantCulture, out position))
+        {
+            mapped[index] = position < args.Length ? args[position] : new MissingArgument();
+        }
+        else
+        {
+            mapped[index] = index < args.Length ? args[index] : new MissingArgument();
+        }
+    }
+
+    return mapped;
 }
 
 // Selects the plural form with the vue-i18n rules: the absolute value of the first argument is the count.
-// Two forms: 1 selects the first form, anything else the second. Three or more forms: the count is the
-// index, and larger counts use the last form. Without a numeric first argument the count is 1.
+// Two forms: exactly 1 selects the first form, anything else the second. Three forms: exactly 0 selects the
+// first, exactly 1 the second, anything else the third. More forms: an integral count is the index and
+// larger or fractional counts use the last form. Without a numeric first argument the count is 1.
 private static string SelectForm(string text, object?[] args)
 {
     global::System.Collections.Generic.List<int>? pipes = null;
@@ -40,6 +82,16 @@ private static string SelectForm(string text, object?[] args)
             if (end > 0)
             {
                 index = end;
+                continue;
+            }
+        }
+        else if (character == '@')
+        {
+            // A link that could not be resolved at generation time is kept as written.
+            var linkEnd = ScanLink(text, index);
+            if (linkEnd > 0)
+            {
+                index = linkEnd;
                 continue;
             }
         }
@@ -62,26 +114,27 @@ private static string SelectForm(string text, object?[] args)
     }
 
     var formCount = pipes.Count + 1;
-    long count;
+    double count;
     if (args.Length == 0 || !TryGetCount(args[0], out count))
     {
         count = 1;
     }
 
-    if (count < 0)
-    {
-        // long.MinValue cannot be negated, also not in a checked context.
-        count = count == long.MinValue ? long.MaxValue : -count;
-    }
+    count = global::System.Math.Abs(count);
 
     int selected;
     if (formCount == 2)
     {
         selected = count == 1 ? 0 : 1;
     }
+    else if (formCount == 3)
+    {
+        selected = count == 0 ? 0 : count == 1 ? 1 : 2;
+    }
     else
     {
-        selected = count < formCount - 1 ? (int)count : formCount - 1;
+        // An integral count is the index, a larger or fractional count uses the last form.
+        selected = count < formCount - 1 && global::System.Math.Floor(count) == count ? (int)count : formCount - 1;
     }
 
     var from = selected == 0 ? 0 : pipes[selected - 1] + 1;
@@ -89,25 +142,71 @@ private static string SelectForm(string text, object?[] args)
     return text.Substring(from, to - from).Trim();
 }
 
-private static bool TryGetCount(object? value, out long count)
+// Fractional counts are kept: only exactly 1 (or 0) selects the singular forms.
+private static bool TryGetCount(object? value, out double count)
 {
     if (value is sbyte || value is byte || value is short || value is ushort || value is int || value is uint
         || value is long || value is ulong || value is float || value is double || value is decimal)
     {
-        try
-        {
-            count = global::System.Convert.ToInt64(value, global::System.Globalization.CultureInfo.InvariantCulture);
-        }
-        catch (global::System.OverflowException)
-        {
-            count = long.MaxValue;
-        }
-
+        count = global::System.Convert.ToDouble(value, global::System.Globalization.CultureInfo.InvariantCulture);
         return true;
     }
 
     count = 0;
     return false;
+}
+
+// Reads a link such as @:key, @:{'key'} or @.upper:key that starts at the '@' at index. Returns the index
+// after it, or -1 when the '@' does not start one. A trailing '.' is not part of a bare key.
+private static int ScanLink(string text, int index)
+{
+    var position = index + 1;
+    if (position < text.Length && text[position] == '.')
+    {
+        var colon = text.IndexOf(':', position);
+        if (colon < 0)
+        {
+            return -1;
+        }
+
+        var modifier = text.Substring(position + 1, colon - position - 1);
+        if (modifier != ""lower"" && modifier != ""upper"" && modifier != ""capitalize"")
+        {
+            return -1;
+        }
+
+        position = colon;
+    }
+
+    if (position >= text.Length || text[position] != ':')
+    {
+        return -1;
+    }
+
+    position++;
+    if (position + 1 < text.Length && text[position] == '{' && text[position + 1] == '\'')
+    {
+        var quote = text.IndexOf('\'', position + 2);
+        if (quote > position + 2 && quote + 1 < text.Length && text[quote + 1] == '}')
+        {
+            return quote + 2;
+        }
+
+        return -1;
+    }
+
+    var keyEnd = position;
+    while (keyEnd < text.Length && (IsWordCharacter(text[keyEnd]) || text[keyEnd] == '-' || text[keyEnd] == '$' || text[keyEnd] == '.'))
+    {
+        keyEnd++;
+    }
+
+    while (keyEnd > position && text[keyEnd - 1] == '.')
+    {
+        keyEnd--;
+    }
+
+    return keyEnd > position ? keyEnd : -1;
 }
 
 // Replaces {name} and {name:format} with the argument at the position of the name in the key's parameter
@@ -136,7 +235,7 @@ private static string Substitute(string text, string[]? names, object?[] args, g
                 else
                 {
                     var position = names == null ? -1 : global::System.Array.IndexOf(names, name);
-                    if (position >= 0 && position < args.Length)
+                    if (position >= 0 && position < args.Length && !(args[position] is MissingArgument))
                     {
                         builder.Append(string.Format(provider, format == null ? ""{0}"" : ""{0:"" + format + ""}"", args[position]));
                     }
@@ -147,6 +246,16 @@ private static string Substitute(string text, string[]? names, object?[] args, g
                 }
 
                 index = end;
+                continue;
+            }
+        }
+        else if (character == '@')
+        {
+            var linkEnd = ScanLink(text, index);
+            if (linkEnd > 0)
+            {
+                builder.Append(text, index, linkEnd - index);
+                index = linkEnd;
                 continue;
             }
         }
