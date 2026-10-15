@@ -192,6 +192,25 @@ public class SourceGeneratorWithAdditionalFilesTests
   }
 
   [Fact]
+  public void Skips_all_plural_variants_of_a_language_when_one_variant_has_an_unknown_placeholder()
+  {
+    var (_, runResult, outputCompilation) = GeneratorTestHelpers.RunGenerator(
+        new I18NSourceGenerator(),
+        [
+            new TestAdditionalFile("./en.json", """{ "item": "item" }"""),
+            new TestAdditionalFile("./no.json", """{ "item": "ok | {missing}" }""")
+        ],
+        fallbackLanguage: "en");
+
+    Assert.Contains(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult), static diagnostic => diagnostic.Id == "I18N006");
+
+    var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    Assert.Contains("public static string item(int count) =>", languageSource, StringComparison.Ordinal);
+    Assert.DoesNotContain("\"no\"", languageSource, StringComparison.Ordinal);
+    Assert.Contains("(_, _) => \"item\",", languageSource, StringComparison.Ordinal);
+  }
+
+  [Fact]
   public void Generates_single_form_case_when_only_the_fallback_language_is_plural()
   {
     var (_, runResult, outputCompilation) = GeneratorTestHelpers.RunGenerator(
