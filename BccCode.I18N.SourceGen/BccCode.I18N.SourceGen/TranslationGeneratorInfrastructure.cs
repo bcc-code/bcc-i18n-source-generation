@@ -921,20 +921,38 @@ internal static class TranslationGeneratorUtilities
 
     public static string EscapeXmlDoc(string text)
     {
-        var builder = new StringBuilder((text ?? string.Empty)
-            .Replace("&", "&amp;")
-            .Replace("<", "&lt;")
-            .Replace(">", "&gt;")
-            .Replace("\r", string.Empty)
-            .Replace("\n", "\\n"));
-
-        // Other line breaks would end the /// comment, and control characters are invisible.
-        for (var index = builder.Length - 1; index >= 0; index--)
+        text ??= string.Empty;
+        var builder = new StringBuilder(text.Length);
+        foreach (var character in text)
         {
-            if (NeedsUnicodeEscape(builder[index]))
+            switch (character)
             {
-                var character = builder[index];
-                builder.Remove(index, 1).Insert(index, "\\u" + ((int)character).ToString("X4"));
+                case '&':
+                    builder.Append("&amp;");
+                    break;
+                case '<':
+                    builder.Append("&lt;");
+                    break;
+                case '>':
+                    builder.Append("&gt;");
+                    break;
+                case '\r':
+                    break;
+                case '\n':
+                    builder.Append("\\n");
+                    break;
+                default:
+                    // Other line breaks would end the /// comment, and control characters are invisible.
+                    if (NeedsUnicodeEscape(character))
+                    {
+                        builder.Append("\\u").Append(((int)character).ToString("X4"));
+                    }
+                    else
+                    {
+                        builder.Append(character);
+                    }
+
+                    break;
             }
         }
 
