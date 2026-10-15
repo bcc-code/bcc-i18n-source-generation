@@ -381,7 +381,7 @@ public class SourceGeneratorWithAdditionalFilesTests
     var languageSource = GetLanguageSource(outputCompilation);
     Assert.Contains("public static string car(int count) =>", languageSource, StringComparison.Ordinal);
     Assert.Contains("(_, \"no\") => \"bil\",", languageSource, StringComparison.Ordinal);
-    Assert.Contains("(0, _) => \"car\",", languageSource, StringComparison.Ordinal);
+    Assert.Contains("(1, _) => \"car\",", languageSource, StringComparison.Ordinal);
     Assert.Contains("(_, _) => \"cars\",", languageSource, StringComparison.Ordinal);
   }
 

@@ -154,4 +154,30 @@ public class GeneratedApiIntegrationTests
         Assert.Equal("only in the fallback language", LanguageStrings.GetString("message.fallbackOnly", new CultureInfo("nb-NO")));
         Assert.Null(LanguageStrings.GetStringOrNull("message.unknown", new CultureInfo("nb-NO")));
     }
+
+    [Fact]
+    public void Linked_messages_are_resolved_at_generation_time()
+    {
+        CultureInfo.CurrentUICulture = new CultureInfo("en");
+        Assert.Equal("Press Save.", Language.message.press);
+        Assert.Equal("Press Save.", LanguageStrings.GetString("message.press"));
+
+        CultureInfo.CurrentUICulture = new CultureInfo("nb-NO");
+        Assert.Equal("Trykk Lagre.", Language.message.press);
+        Assert.Equal("Trykk Lagre.", new LocalizedLanguage(new CultureInfo("nb-NO")).message.press);
+    }
+
+    [Fact]
+    public void Two_form_plurals_use_the_first_form_only_for_a_count_of_one()
+    {
+        var english = new LocalizedLanguage(new CultureInfo("en"));
+        var norwegian = new LocalizedLanguage(new CultureInfo("nb-NO"));
+
+        Assert.Equal("cars", english.plural.car(0));
+        Assert.Equal("car", english.plural.car(1));
+        Assert.Equal("cars", english.plural.car(2));
+        Assert.Equal("car", english.plural.car(-1));
+        Assert.Equal("bil", norwegian.plural.car(1));
+        Assert.Equal("biler", norwegian.plural.car(2));
+    }
 }

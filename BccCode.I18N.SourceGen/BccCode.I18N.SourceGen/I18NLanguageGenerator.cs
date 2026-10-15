@@ -428,7 +428,9 @@ internal static class I18NLanguageGenerator
 
         if (isPlural)
         {
-            writer.Append('(').Append(identifiers[0]).Append(", ")
+            // vue-i18n uses the absolute value of the count to pick the variant.
+            var count = identifiers[0];
+            writer.Append('(').Append(count).Append(" < 0 ? -").Append(count).Append(" : ").Append(count).Append(", ")
                 .Append(TranslationGeneratorUtilities.LanguageParameter).AppendLine(") switch");
             writer.OpenBlock();
 
@@ -493,8 +495,14 @@ internal static class I18NLanguageGenerator
             {
                 writer.Append('_');
             }
+            else if (expressions.Length == 2)
+            {
+                // vue-i18n's rule for two forms: a count of 1 uses the first form, anything else the second.
+                writer.Append('1');
+            }
             else
             {
+                // Three or more forms: the count selects the form, and the last form is used for larger counts.
                 writer.Append(index.ToString());
             }
 
