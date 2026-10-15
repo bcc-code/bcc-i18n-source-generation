@@ -122,6 +122,22 @@ internal static class TranslationGeneratorDiagnostics
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    public static readonly DiagnosticDescriptor MissingKey = new(
+        id: "I18N007",
+        title: "Translation key missing from language",
+        messageFormat: "{0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ExtraKey = new(
+        id: "I18N008",
+        title: "Translation key not in fallback language",
+        messageFormat: "{0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor LanguageAliasTargetMissing = new(
         id: "I18N009",
         title: "Language alias target missing",
@@ -580,6 +596,11 @@ internal static class TranslationModelSetFactory
 
         var aliases = ResolveAliases(options.LanguageAliases, uniqueFiles, diagnosticBuilder);
 
+        if (hasFallbackFile)
+        {
+            AddKeyMismatchDiagnostics(diagnosticBuilder, uniqueFiles, fallbackFile, normalizedFallbackLanguage);
+        }
+
         return new TranslationModelSet(
             new TranslationGeneratorOptions(normalizedFallbackLanguage, options.GeneratedNamespace, options.LanguageAliases),
             new EquatableArray<LanguageFileModel>(uniqueFiles),
@@ -627,6 +648,51 @@ internal static class TranslationModelSetFactory
             .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
             .Select(static pair => new LanguageAliasModel(pair.Key, pair.Value))
             .ToImmutableArray());
+    }
+
+    private const int MaxListedKeys = 10;
+
+    private static void AddKeyMismatchDiagnostics(
+        ImmutableArray<GeneratorDiagnosticInfo>.Builder diagnostics,
+        ImmutableArray<LanguageFileModel> files,
+        LanguageFileModel fallbackFile,
+        string fallbackLanguage)
+    {
+        var fallbackKeys = new HashSet<string>(fallbackFile.Entries.Select(static entry => entry.KeyPath), StringComparer.Ordinal);
+
+        foreach (var file in files)
+        {
+            if (string.Equals(file.Language, fallbackLanguage, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var fileKeys = new HashSet<string>(file.Entries.Select(static entry => entry.KeyPath), StringComparer.Ordinal);
+            var missing = fallbackKeys.Where(key => !fileKeys.Contains(key)).OrderBy(static key => key, StringComparer.Ordinal).ToArray();
+            var extra = fileKeys.Where(key => !fallbackKeys.Contains(key)).OrderBy(static key => key, StringComparer.Ordinal).ToArray();
+
+            if (missing.Length > 0)
+            {
+                diagnostics.Add(new GeneratorDiagnosticInfo(
+                    TranslationGeneratorDiagnostics.MissingKey,
+                    $"Language '{file.Language}' is missing {missing.Length} key(s) present in fallback language '{fallbackLanguage}': {FormatKeys(missing)}",
+                    new LocationInfo(file.FilePath)));
+            }
+
+            if (extra.Length > 0)
+            {
+                diagnostics.Add(new GeneratorDiagnosticInfo(
+                    TranslationGeneratorDiagnostics.ExtraKey,
+                    $"Language '{file.Language}' has {extra.Length} key(s) not present in fallback language '{fallbackLanguage}', so they are not generated in Language or LanguageKeys: {FormatKeys(extra)}",
+                    new LocationInfo(file.FilePath)));
+            }
+        }
+    }
+
+    private static string FormatKeys(string[] keys)
+    {
+        var listed = string.Join(", ", keys.Take(MaxListedKeys));
+        return keys.Length > MaxListedKeys ? $"{listed}, and {keys.Length - MaxListedKeys} more" : listed;
     }
 
     private static string NormalizeLanguage(string language)
