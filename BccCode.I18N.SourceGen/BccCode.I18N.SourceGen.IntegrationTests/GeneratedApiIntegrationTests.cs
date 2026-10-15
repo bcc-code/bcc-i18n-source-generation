@@ -35,5 +35,16 @@ public class GeneratedApiIntegrationTests
         Assert.Equal("hello world", Language.message.hello1);
         Assert.Equal("message.unknown", IntegrationTests.LanguageStrings.GetString("message.unknown"));
         Assert.Null(IntegrationTests.LanguageStrings.GetStringOrNull("message.unknown"));
+        Assert.Equal("hello world", LanguageStrings.GetString("message.hello1"));
+    }
+
+    [Fact]
+    public void LanguageStrings_uses_the_current_culture_when_it_has_translations()
+    {
+        CultureInfo.CurrentUICulture = new CultureInfo("no");
+
+        Assert.Equal("hei verden", LanguageStrings.GetString("message.hello1"));
+        Assert.Equal("{msg} verden", LanguageStrings.GetStringOrNull("message.hello2"));
+        Assert.Equal("message.unknown", LanguageStrings.GetString("message.unknown"));
     }
 }

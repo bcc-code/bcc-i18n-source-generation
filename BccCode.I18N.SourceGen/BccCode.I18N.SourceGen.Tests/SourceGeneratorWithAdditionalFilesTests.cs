@@ -75,7 +75,7 @@ public class SourceGeneratorWithAdditionalFilesTests
 
     var dictionarySource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "LanguageStrings.g.cs");
     Assert.Contains("namespace BccCode.I18N.Tests.Generated", dictionarySource, StringComparison.Ordinal);
-    Assert.Contains("[\"message.hello1\"] = \"hei verden\"", dictionarySource, StringComparison.Ordinal);
+    Assert.Contains("\"message.hello1\" => \"hei verden\",", dictionarySource, StringComparison.Ordinal);
     Assert.Contains("public static string? GetStringOrNull(string key)", dictionarySource, StringComparison.Ordinal);
   }
 
@@ -94,7 +94,47 @@ public class SourceGeneratorWithAdditionalFilesTests
     Assert.Contains("_ => \"hello world\"", languageSource, StringComparison.Ordinal);
 
     var dictionarySource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "LanguageStrings.g.cs");
-    Assert.Contains("!languages.TryGetValue(\"en\", out dictionary)", dictionarySource, StringComparison.Ordinal);
+    Assert.Contains("\"en\" => GetStringOrNull0(key),", dictionarySource, StringComparison.Ordinal);
+    Assert.Contains("_ => GetStringOrNull0(key),", dictionarySource, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public void Uses_the_configured_fallback_language_for_LanguageStrings_lookup()
+  {
+    var (_, _, outputCompilation) = GeneratorTestHelpers.RunGenerator(
+        new I18NSourceGenerator(),
+        CreateTranslationFiles(),
+        fallbackLanguage: "no");
+
+    var dictionarySource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "LanguageStrings.g.cs");
+    Assert.Contains("\"no\" => GetStringOrNull1(key),", dictionarySource, StringComparison.Ordinal);
+    Assert.Contains("_ => GetStringOrNull1(key),", dictionarySource, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public void LanguageStrings_has_no_static_field_initializers_so_hot_reload_can_apply_translation_edits()
+  {
+    var (_, _, outputCompilation) = GeneratorTestHelpers.RunGenerator(
+        new I18NSourceGenerator(),
+        CreateTranslationFiles());
+
+    var dictionarySource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "LanguageStrings.g.cs");
+    Assert.DoesNotContain("static readonly", dictionarySource, StringComparison.Ordinal);
+    Assert.DoesNotContain("Dictionary", dictionarySource, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public void LanguageStrings_compiles_when_a_key_path_is_defined_twice()
+  {
+    var (_, _, outputCompilation) = GeneratorTestHelpers.RunGenerator(
+        new I18NSourceGenerator(),
+        [new TestAdditionalFile("./en.json", """{ "a.b": "flat", "a": { "b": "nested" } }""")],
+        fallbackLanguage: "en");
+
+    Assert.DoesNotContain(outputCompilation.GetDiagnostics(), static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+    var dictionarySource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "LanguageStrings.g.cs");
+    Assert.Single(dictionarySource.Split('\n'), static line => line.TrimStart().StartsWith("\"a.b\" =>", StringComparison.Ordinal));
   }
 
   [Fact]
