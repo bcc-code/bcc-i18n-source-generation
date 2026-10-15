@@ -115,6 +115,59 @@ The parameter name is the part before the colon. The same name can appear severa
 
 Format specifiers are .NET-only. If a frontend such as vue-i18n shares the same JSON files, it shows `{date:d}` literally. `LanguageStrings` returns the stored text unchanged, including format specifiers.
 
+## Listing languages and keys
+
+`LanguageStrings` has members that list what the translation files contain:
+
+```csharp
+string fallback = LanguageStrings.FallbackLanguage;                  // "en"
+IReadOnlyList<string> languages = LanguageStrings.Languages;         // all file languages, ordinal order
+IReadOnlyList<string> keys = LanguageStrings.Keys;                   // key paths of the fallback file, ordinal order
+
+IReadOnlyList<KeyValuePair<string, string>> norwegian = LanguageStrings.GetAllStrings("no");   // language is case-insensitive, empty if unknown
+var forUser = LanguageStrings.GetAllStrings(new CultureInfo("nb-NO"));                          // language matched from the culture, plus fallback strings it lacks
+var onlyNorwegian = LanguageStrings.GetAllStrings(new CultureInfo("nb-NO"), includeFallback: false);
+```
+
+The values are the stored texts with linked messages resolved, as returned by `GetStringOrNull`. These members are method bodies and allocate a new array or list on every call, so cache the result if you call them often. They do not use static fields, so hot reload still applies translation edits.
+
+## Formatting by key (LanguageStrings.Format)
+
+`LanguageStrings.Format` formats a stored message by key when you only have the key, for example from a database or a validation attribute:
+
+```csharp
+string text = LanguageStrings.Format("message.hello2", "Kari");                          // language from CurrentUICulture, formatting with CurrentCulture
+string text = LanguageStrings.Format("message.hello2", new CultureInfo("nb-NO"), "Kari"); // language and formatting from the culture
+```
+
+The arguments are matched to the parameters in the same order as the parameters of the `Language` member for the key (list placeholders in order of first appearance, and the count first for plural messages). It does the same as the `Language` member:
+
+- Placeholders are replaced by `string.Format`-style formatting of the argument with the culture as format provider, and `{name:format}` is honored.
+- `{'text'}` becomes `text`.
+- A placeholder without a matching argument stays as written, and an unknown key returns the key.
+- For a plural message the first argument is the count (any integral or floating point number). The variant is selected with the vue-i18n rules per number of variants (see below). Without a numeric first argument the count is 1.
+
+Use `Language` or `LocalizedLanguage` when you can, because they check the parameters at compile time.
+
+## IStringLocalizer
+
+When the project references `Microsoft.Extensions.Localization.Abstractions` (directly or through `Microsoft.Extensions.Localization`), the generator also emits `LanguageStringLocalizer` and `LanguageStringLocalizerFactory` in the generated namespace. Nothing is generated when the package is not referenced.
+
+- `new LanguageStringLocalizer()` uses the current UI culture at the time of each call, and `new LanguageStringLocalizer(culture)` always uses that culture.
+- `localizer["key"]` returns the stored text, with `ResourceNotFound` set (and the key as value) when the key is unknown. `localizer["key", args]` formats the text with `LanguageStrings.Format`.
+- `GetAllStrings(includeParentCultures)` returns `LanguageStrings.GetAllStrings(culture, includeParentCultures)`, so `true` adds the fallback language strings the language lacks.
+- `WithCulture` is generated only for versions of the abstractions that still declare it (2.x and 3.x).
+- `LanguageStringLocalizerFactory` returns a `LanguageStringLocalizer` for every resource type, because the whole application shares one set of translation files.
+
+There is no dependency injection extension method, so register the factory yourself:
+
+```csharp
+services.AddSingleton<IStringLocalizerFactory, LanguageStringLocalizerFactory>();
+services.AddTransient(typeof(IStringLocalizer<>), typeof(StringLocalizer<>));
+```
+
+If you also call `AddLocalization()`, register these after it, because the last registration of `IStringLocalizerFactory` wins. DataAnnotations and validation message localization use the factory, so keys in validation attributes (for example `[Required(ErrorMessage = "validation.required")]`) resolve through the translation files.
+
 ## vue-i18n compatibility
 
 Translation files are often shared with a Vue frontend that uses vue-i18n (v9+). The generator understands these parts of the message syntax:

@@ -68,6 +68,8 @@ internal static class TranslationGeneratorTrackingNames
     public const string TranslationModelSet = nameof(TranslationModelSet);
     public const string ModelSetDiagnostics = nameof(ModelSetDiagnostics);
     public const string LanguageKeysModel = nameof(LanguageKeysModel);
+    public const string StringLocalizerSupport = nameof(StringLocalizerSupport);
+    public const string GeneratedNamespace = nameof(GeneratedNamespace);
 }
 
 internal static class TranslationGeneratorDiagnostics
@@ -860,6 +862,27 @@ internal static class TranslationGeneratorUtilities
 
         builder.Append('"');
         return builder.ToString();
+    }
+
+    /// <summary>
+    /// The parameters of a key, in order: the placeholder names of the fallback text. A key is plural when any
+    /// language uses pipe-separated variants. When the fallback is not plural, the count parameter is named
+    /// "count" and comes first. This is the single source of the parameter order for the Language members
+    /// and for <c>LanguageStrings.Format</c>.
+    /// </summary>
+    public static string[] GetKeyParameters(string fallbackValue, IEnumerable<string> allValues, out bool isPlural)
+    {
+        var fallbackIsPlural = IsPluralValue(fallbackValue);
+        isPlural = fallbackIsPlural || allValues.Any(IsPluralValue);
+        var parameters = GetParameterNames(fallbackValue, fallbackIsPlural);
+        if (isPlural && !fallbackIsPlural)
+        {
+            parameters = new[] { DefaultCountParameter }
+                .Concat(parameters.Where(static parameter => parameter != DefaultCountParameter))
+                .ToArray();
+        }
+
+        return parameters;
     }
 
     public static string[] GetParameterNames(string value, bool isPlural)
