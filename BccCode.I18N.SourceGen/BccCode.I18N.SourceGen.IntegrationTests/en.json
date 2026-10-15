@@ -2,6 +2,7 @@
     "message": {
         "hello1": "hello world",
         "hello2": "{msg} world",
+        "price": "Price: {amount:N2}",
         "fallbackOnly": "only in the fallback language"
     },
     "plural": {

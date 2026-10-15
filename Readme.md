@@ -20,7 +20,7 @@ The generator produces three generated classes from the same JSON translation pi
 
 ### `Language` (I18NLanguageGenerator)
 
-Generated file: `Language.g.cs`
+Generated file: `Language.g.cs`. The translations themselves live in the internal `LanguageTranslations` class (`LanguageTranslations.g.cs`), which `Language` and `LocalizedLanguage` both call.
 
 A strongly-typed static class that mirrors the structure of your JSON files. Each key becomes a `static string` property or method that returns the correct translation for `CultureInfo.CurrentUICulture` at runtime, falling back to the fallback language (`no` by default, see below) if no translation file matches the current culture. A key that is missing in the matched language also uses the fallback language's text.
 
@@ -70,6 +70,50 @@ It also exposes the language matching as a method:
 ```csharp
 string language = LanguageStrings.ResolveLanguage(new CultureInfo("nb-NO")); // "no" when no.json exists
 ```
+
+## Explicit culture
+
+`Language` and the one-argument `LanguageStrings` methods read `CultureInfo.CurrentUICulture`. For background jobs, emails in a user's language and tests, pass a culture instead of changing the thread culture:
+
+```csharp
+var language = new LocalizedLanguage(new CultureInfo("nb-NO"));
+
+string greeting = language.message.hello;     // same members as Language, but instance members
+string cars = language.plural.car(3);
+
+string value = LanguageStrings.GetString("message.hello", new CultureInfo("nb-NO"));
+string? maybe = LanguageStrings.GetStringOrNull("message.hello", new CultureInfo("nb-NO"));
+```
+
+`LocalizedLanguage` is a readonly struct in the generated namespace. Its members have the same names, parameters and return types as in `Language`. It resolves the language once in the constructor with `LanguageStrings.ResolveLanguage(culture)`. Groups are returned as small structs in the generated `LocalizedLanguageGroups` class (hidden from completion; the type names are derived from the key path and given a numeric suffix on a collision, so they never clash with your keys). `default(LocalizedLanguage)` uses the fallback language and invariant formatting.
+
+Which culture is used for what:
+
+| API | Language selection | Number/date formatting |
+| --- | --- | --- |
+| `Language.*` | `CultureInfo.CurrentUICulture` | `CultureInfo.CurrentCulture` |
+| `new LocalizedLanguage(culture).*` | `culture` | `culture` |
+| `LanguageStrings.GetString(key)` | `CultureInfo.CurrentUICulture` | none (raw stored value) |
+| `LanguageStrings.GetString(key, culture)` | `culture` | none (raw stored value) |
+
+The `LanguageStrings` overloads use the same per-key fallback to the fallback language as the one-argument methods.
+
+## Formatting
+
+Placeholders are formatted with `string.Format`, so values that implement `IFormattable` (numbers, `DateTime`, `DateOnly`, ...) are formatted with the culture shown in the table above. A placeholder can carry a .NET format specifier after a colon:
+
+```json
+{ "due": "Due {date:d}", "price": "{amount:N2} kr", "items": "{count:N0} item | {count:N0} items" }
+```
+
+```csharp
+Language.due(DateTime.Today);       // "Due 1/31/2024" or "Due 31.01.2024", depending on CurrentCulture
+Language.price(1234.5m);            // "1,234.50 kr" or "1 234,50 kr"
+```
+
+The parameter name is the part before the colon. The same name can appear several times with different formats, and the format may not contain `{` or `}`. The placeholder check (I18N006) compares names only, so languages can use different formats for the same name.
+
+Format specifiers are .NET-only. If a frontend such as vue-i18n shares the same JSON files, it shows `{date:d}` literally. `LanguageStrings` returns the stored text unchanged, including format specifiers.
 
 ## Language matching
 

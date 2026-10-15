@@ -181,8 +181,8 @@ public class LanguageMatchingTests
         fallbackLanguage: "en");
 
     var strings = LoadType(compilation, GeneratedNamespace + ".LanguageStrings");
-    var getStringOrNull = strings.GetMethod("GetStringOrNull")!;
-    var getString = strings.GetMethod("GetString")!;
+    var getStringOrNull = strings.GetMethod("GetStringOrNull", [typeof(string)])!;
+    var getString = strings.GetMethod("GetString", [typeof(string)])!;
     var original = CultureInfo.CurrentUICulture;
     try
     {

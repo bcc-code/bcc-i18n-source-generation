@@ -56,10 +56,12 @@ public class SourceGeneratorWithAdditionalFilesTests
         .OrderBy(static fileName => fileName, StringComparer.Ordinal)
         .ToArray();
 
-    Assert.Equal(["Language.g.cs", "LanguageKeys.g.cs", "LanguageStrings.g.cs"], generatedFiles);
+    Assert.Equal(
+        ["Language.g.cs", "LanguageKeys.g.cs", "LanguageStrings.g.cs", "LanguageTranslations.g.cs", "LocalizedLanguage.g.cs", "LocalizedLanguageGroups.g.cs"],
+        generatedFiles);
     Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
 
-    var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    var languageSource = GetLanguageSource(outputCompilation);
     Assert.Contains("namespace BccCode.I18N.Tests.Generated", languageSource, StringComparison.Ordinal);
     Assert.Contains("public static class message", languageSource, StringComparison.Ordinal);
     Assert.Contains("public static string hello1 =>", languageSource, StringComparison.Ordinal);
@@ -89,7 +91,7 @@ public class SourceGeneratorWithAdditionalFilesTests
 
     Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
 
-    var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    var languageSource = GetLanguageSource(outputCompilation);
     Assert.Contains("\"no\" => \"hei verden\"", languageSource, StringComparison.Ordinal);
     Assert.Contains("_ => \"hello world\"", languageSource, StringComparison.Ordinal);
 
@@ -224,7 +226,7 @@ public class SourceGeneratorWithAdditionalFilesTests
 
     Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
 
-    var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    var languageSource = GetLanguageSource(outputCompilation);
     Assert.Contains("\"no\" => \"hei verden\"", languageSource, StringComparison.Ordinal);
     Assert.DoesNotContain("\"de\"", languageSource, StringComparison.Ordinal);
 
@@ -246,7 +248,7 @@ public class SourceGeneratorWithAdditionalFilesTests
 
     Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
 
-    var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    var languageSource = GetLanguageSource(outputCompilation);
     Assert.Contains("\"de\" => \"hallo welt\"", languageSource, StringComparison.Ordinal);
   }
 
@@ -265,7 +267,7 @@ public class SourceGeneratorWithAdditionalFilesTests
         ],
         fallbackLanguage: "en");
 
-    var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    var languageSource = GetLanguageSource(outputCompilation);
     Assert.Equal(expectedMarked, languageSource.Contains("\"de\" => \"hallo welt\"", StringComparison.Ordinal));
   }
 
@@ -333,14 +335,14 @@ public class SourceGeneratorWithAdditionalFilesTests
     Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
     Assert.Empty(outputCompilation.GetDiagnostics().Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
 
-    var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    var languageSource = GetLanguageSource(outputCompilation);
     Assert.Contains("public static string item(int count) =>", languageSource, StringComparison.Ordinal);
     Assert.Contains("(0, \"no\") => \"ingen ting\",", languageSource, StringComparison.Ordinal);
-    Assert.Contains("(_, \"no\") => string.Format(global::System.Globalization.CultureInfo.CurrentCulture, \"{0} ting\", count),", languageSource, StringComparison.Ordinal);
+    Assert.Contains("(_, \"no\") => string.Format(__provider, \"{0} ting\", count),", languageSource, StringComparison.Ordinal);
     Assert.Contains("(_, _) => \"item\",", languageSource, StringComparison.Ordinal);
 
     Assert.Contains("public static string owned(int count, object name) =>", languageSource, StringComparison.Ordinal);
-    Assert.Contains("(_, _) => string.Format(global::System.Globalization.CultureInfo.CurrentCulture, \"{1} owns it\", count, name),", languageSource, StringComparison.Ordinal);
+    Assert.Contains("(_, _) => string.Format(__provider, \"{1} owns it\", count, name),", languageSource, StringComparison.Ordinal);
   }
 
   [Fact]
@@ -356,7 +358,7 @@ public class SourceGeneratorWithAdditionalFilesTests
 
     Assert.Contains(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult), static diagnostic => diagnostic.Id == "I18N006");
 
-    var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    var languageSource = GetLanguageSource(outputCompilation);
     Assert.Contains("public static string item(int count) =>", languageSource, StringComparison.Ordinal);
     Assert.DoesNotContain("\"no\"", languageSource, StringComparison.Ordinal);
     Assert.Contains("(_, _) => \"item\",", languageSource, StringComparison.Ordinal);
@@ -376,7 +378,7 @@ public class SourceGeneratorWithAdditionalFilesTests
     Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
     Assert.Empty(outputCompilation.GetDiagnostics().Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
 
-    var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    var languageSource = GetLanguageSource(outputCompilation);
     Assert.Contains("public static string car(int count) =>", languageSource, StringComparison.Ordinal);
     Assert.Contains("(_, \"no\") => \"bil\",", languageSource, StringComparison.Ordinal);
     Assert.Contains("(0, _) => \"car\",", languageSource, StringComparison.Ordinal);
@@ -430,7 +432,7 @@ public class SourceGeneratorWithAdditionalFilesTests
         CreateTranslationFiles(),
         fallbackLanguage: "en");
 
-    foreach (var fileName in new[] { "Language.g.cs", "LanguageKeys.g.cs", "LanguageStrings.g.cs" })
+    foreach (var fileName in new[] { "Language.g.cs", "LanguageKeys.g.cs", "LanguageStrings.g.cs", "LanguageTranslations.g.cs", "LocalizedLanguage.g.cs", "LocalizedLanguageGroups.g.cs" })
     {
       var source = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, fileName);
       var lines = source.Split('\n');
@@ -455,7 +457,7 @@ public class SourceGeneratorWithAdditionalFilesTests
     Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
     Assert.Empty(outputCompilation.GetDiagnostics().Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
 
-    var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    var languageSource = GetLanguageSource(outputCompilation);
     Assert.Contains("public static class CultureInfo", languageSource, StringComparison.Ordinal);
     Assert.Contains("public static class System", languageSource, StringComparison.Ordinal);
   }
@@ -474,7 +476,7 @@ public class SourceGeneratorWithAdditionalFilesTests
     Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
     Assert.Empty(outputCompilation.GetDiagnostics().Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
 
-    var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    var languageSource = GetLanguageSource(outputCompilation);
     Assert.Contains("public static string greeting(object @class, object _1st) =>", languageSource, StringComparison.Ordinal);
     Assert.Contains("\"{0} meets {1}\", @class, _1st)", languageSource, StringComparison.Ordinal);
     Assert.Contains("public static string items(int @class) =>", languageSource, StringComparison.Ordinal);
@@ -494,7 +496,7 @@ public class SourceGeneratorWithAdditionalFilesTests
     Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
     Assert.Empty(outputCompilation.GetDiagnostics().Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
 
-    var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    var languageSource = GetLanguageSource(outputCompilation);
     Assert.Contains("public static string rank(object _1st, object _1st2) =>", languageSource, StringComparison.Ordinal);
     Assert.Contains("\"{0} then {1}\", _1st, _1st2)", languageSource, StringComparison.Ordinal);
     Assert.Contains("\"{1} så {0}\", _1st, _1st2)", languageSource, StringComparison.Ordinal);
@@ -525,6 +527,11 @@ public class SourceGeneratorWithAdditionalFilesTests
 
     Assert.Single(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult), static diagnostic => diagnostic.Id == "I18N004");
   }
+
+  // The static Language members delegate to LanguageTranslations, which holds the translation switches.
+  private static string GetLanguageSource(Compilation compilation) =>
+      GeneratorTestHelpers.GetGeneratedSource(compilation, "Language.g.cs") +
+      GeneratorTestHelpers.GetGeneratedSource(compilation, "LanguageTranslations.g.cs");
 
   private static TestAdditionalFile[] CreateTranslationFiles() =>
   [
