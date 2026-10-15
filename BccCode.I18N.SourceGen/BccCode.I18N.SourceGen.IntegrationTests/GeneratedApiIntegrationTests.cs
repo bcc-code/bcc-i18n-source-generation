@@ -17,6 +17,17 @@ public class GeneratedApiIntegrationTests
     }
 
     [Fact]
+    public void Generated_api_pluralizes_when_only_some_languages_have_plural_forms()
+    {
+        CultureInfo.CurrentUICulture = new CultureInfo("no");
+        Assert.Equal("én ting", Language.plural.item(1));
+        Assert.Equal("3 ting", Language.plural.item(3));
+
+        CultureInfo.CurrentUICulture = new CultureInfo("en");
+        Assert.Equal("item", Language.plural.item(3));
+    }
+
+    [Fact]
     public void Generated_api_uses_the_configured_fallback_language()
     {
         CultureInfo.CurrentUICulture = new CultureInfo("de");

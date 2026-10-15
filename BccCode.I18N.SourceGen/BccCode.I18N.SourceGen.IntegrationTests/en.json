@@ -5,6 +5,7 @@
     },
     "plural": {
         "car": "car | cars",
+        "item": "item",
         "apple": "no apples | one apple | {count} apples"
     }
 }

@@ -96,8 +96,18 @@ internal static class I18NLanguageGenerator
         string indent)
     {
         var builder = new StringBuilder();
-        var isPlural = fallbackValue.Contains("|", StringComparison.Ordinal);
-        var parameters = TranslationGeneratorUtilities.GetParameterNames(fallbackValue, isPlural);
+        // A key is plural when any language uses pipe-separated variants, so one language
+        // can pluralize while the others (including the fallback) use a single form.
+        var fallbackIsPlural = TranslationGeneratorUtilities.IsPluralValue(fallbackValue);
+        var isPlural = fallbackIsPlural || translations.Values.Any(TranslationGeneratorUtilities.IsPluralValue);
+        var parameters = TranslationGeneratorUtilities.GetParameterNames(fallbackValue, fallbackIsPlural);
+        if (isPlural && !fallbackIsPlural)
+        {
+            // The fallback has no plural forms to infer the count parameter from, so it is always named "count".
+            parameters = new[] { TranslationGeneratorUtilities.DefaultCountParameter }
+                .Concat(parameters.Where(static parameter => parameter != TranslationGeneratorUtilities.DefaultCountParameter))
+                .ToArray();
+        }
 
         builder.AppendLine($"{indent}/// {TranslationGeneratorUtilities.EscapeXmlDoc(fallbackValue)}");
         builder.Append($"{indent}public static string {TranslationGeneratorUtilities.SanitizeName(name)}");
@@ -174,17 +184,23 @@ internal static class I18NLanguageGenerator
         string indent,
         bool isFallback = false)
     {
+        // Every variant is validated before any arm is written, so a language with one invalid
+        // variant falls back as a whole instead of mixing its own and the fallback's variants.
         var parts = TranslationGeneratorUtilities.SplitPluralParts(value);
+        var expressions = new string[parts.Length];
         for (var index = 0; index < parts.Length; index++)
         {
-            if (!TryCreateExpression(context, keyPath, language, parts[index], parameters, out var expression))
+            if (!TryCreateExpression(context, keyPath, language, parts[index], parameters, out expressions[index]))
             {
                 return;
             }
+        }
 
-            var plurality = index == parts.Length - 1 ? "_" : index.ToString();
-            var languagePattern = isFallback ? "_" : $"\"{language}\"";
-            builder.AppendLine($"{indent}({plurality}, {languagePattern}) => {expression},");
+        var languagePattern = isFallback ? "_" : $"\"{language}\"";
+        for (var index = 0; index < expressions.Length; index++)
+        {
+            var plurality = index == expressions.Length - 1 ? "_" : index.ToString();
+            builder.AppendLine($"{indent}({plurality}, {languagePattern}) => {expressions[index]},");
         }
     }
 

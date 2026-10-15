@@ -12,6 +12,7 @@ The JSON files can contain nested objects (mapped to nested static classes) and 
 
 - **Interpolation**: `{paramName}` placeholders become method parameters (e.g. `"Hello {name}"` → `Language.hello(object name)`)
 - **Pluralization**: pipe-separated variants `"no items | one item | {count} items"` — the first parameter becomes `int count`, and the correct variant is selected at runtime
+  - A key is pluralized when *any* language uses pipe-separated variants. Languages that use a single form for that key return it for every count. When the fallback language has no plural variants for the key, the count parameter is always named `count` (use `{count}` in the other languages).
 
 ## Generated Classes
 
