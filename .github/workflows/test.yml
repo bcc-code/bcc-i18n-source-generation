@@ -44,7 +44,15 @@ jobs:
 
       - name: Check package layout
         run: |
-          package="artifacts/BccCode.I18N.SourceGen.$VERSION.nupkg"
+          # NuGet normalizes the version in the file name (e.g. drops +build metadata), so find the
+          # package instead of building its name from $VERSION.
+          shopt -s nullglob
+          packages=(artifacts/*.nupkg)
+          if [[ ${#packages[@]} -ne 1 ]]; then
+            echo "::error::Expected exactly one .nupkg in artifacts/, found ${#packages[@]}"
+            exit 1
+          fi
+          package="${packages[0]}"
           contents="$(unzip -Z1 "$package")"
           for file in analyzers/dotnet/cs/BccCode.I18N.SourceGen.dll build/BccCode.I18N.SourceGen.props Readme.md; do
             if ! grep -qx "$file" <<< "$contents"; then
