@@ -119,18 +119,18 @@ internal static class I18NLanguageGenerator
         writer.Append("/// ").AppendLine(TranslationGeneratorUtilities.EscapeXmlDoc(fallbackValue));
         writer.Append("public static string ").Append(TranslationGeneratorUtilities.SanitizeName(name));
 
+        var identifiers = TranslationGeneratorUtilities.GetParameterIdentifiers(parameters);
         if (parameters.Length > 0)
         {
             writer.Append('(');
-            for (var index = 0; index < parameters.Length; index++)
+            for (var index = 0; index < identifiers.Length; index++)
             {
                 if (index > 0)
                 {
                     writer.Append(", ");
                 }
 
-                writer.Append(isPlural && index == 0 ? "int " : "object ")
-                    .Append(TranslationGeneratorUtilities.SanitizeName(parameters[index]));
+                writer.Append(isPlural && index == 0 ? "int " : "object ").Append(identifiers[index]);
             }
 
             writer.Append(')');
@@ -145,7 +145,7 @@ internal static class I18NLanguageGenerator
 
         if (isPlural)
         {
-            writer.Append('(').Append(TranslationGeneratorUtilities.SanitizeName(parameters[0])).Append(", ")
+            writer.Append('(').Append(identifiers[0]).Append(", ")
                 .Append(CurrentLanguage).AppendLine(") switch");
             writer.OpenBlock();
 
@@ -190,16 +190,23 @@ internal static class I18NLanguageGenerator
         string[] parameters,
         bool isFallback)
     {
+        // Every variant is validated before any arm is written, so a language with one invalid
+        // variant falls back as a whole instead of mixing its own and the fallback's variants.
         var parts = TranslationGeneratorUtilities.SplitPluralParts(value);
+        var expressions = new string[parts.Length];
         for (var index = 0; index < parts.Length; index++)
         {
-            if (!TryCreateExpression(context, keyPath, language, parts[index], parameters, out var expression))
+            if (!TryCreateExpression(context, keyPath, language, parts[index], parameters, out expressions[index]))
             {
                 return;
             }
+        }
 
+        var languagePattern = isFallback ? "_" : TranslationGeneratorUtilities.ToCSharpStringLiteral(language);
+        for (var index = 0; index < expressions.Length; index++)
+        {
             writer.Append('(');
-            if (index == parts.Length - 1)
+            if (index == expressions.Length - 1)
             {
                 writer.Append('_');
             }
@@ -208,9 +215,7 @@ internal static class I18NLanguageGenerator
                 writer.Append(index.ToString());
             }
 
-            writer.Append(", ")
-                .Append(isFallback ? "_" : TranslationGeneratorUtilities.ToCSharpStringLiteral(language))
-                .Append(") => ").Append(expression).AppendLine(",");
+            writer.Append(", ").Append(languagePattern).Append(") => ").Append(expressions[index]).AppendLine(",");
         }
     }
 

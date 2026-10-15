@@ -706,6 +706,29 @@ internal static class TranslationGeneratorUtilities
         return parameters.ToArray();
     }
 
+    /// <summary>
+    /// Maps placeholder names to unique C# parameter identifiers, in the same order. Placeholders that
+    /// sanitize to the same identifier (e.g. <c>1st</c> and <c>_1st</c>) get a numeric suffix.
+    /// </summary>
+    public static string[] GetParameterIdentifiers(string[] parameterNames)
+    {
+        var identifiers = new string[parameterNames.Length];
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        for (var index = 0; index < parameterNames.Length; index++)
+        {
+            var baseName = SanitizeName(parameterNames[index]);
+            var identifier = baseName;
+            for (var suffix = 2; !used.Add(identifier); suffix++)
+            {
+                identifier = baseName + suffix;
+            }
+
+            identifiers[index] = identifier;
+        }
+
+        return identifiers;
+    }
+
     public static bool IsPluralValue(string value) => (value ?? string.Empty).IndexOf('|') >= 0;
 
     public static string[] SplitPluralParts(string value) =>
@@ -747,9 +770,9 @@ internal static class TranslationGeneratorUtilities
 
         var expressionBuilder = new StringBuilder("string.Format(global::System.Globalization.CultureInfo.CurrentCulture, ", literal.Length + 96);
         expressionBuilder.Append(literal);
-        foreach (var parameterName in parameterNames)
+        foreach (var identifier in GetParameterIdentifiers(parameterNames))
         {
-            expressionBuilder.Append(", ").Append(SanitizeName(parameterName));
+            expressionBuilder.Append(", ").Append(identifier);
         }
 
         expression = expressionBuilder.Append(')').ToString();
