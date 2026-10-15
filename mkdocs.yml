@@ -1,0 +1,75 @@
+site_name: BccCode.I18N.SourceGen
+site_description: User manual for the BccCode.I18N.SourceGen source generator.
+site_url: https://bcc-code.github.io/bcc-i18n-source-generation/
+repo_url: https://github.com/bcc-code/bcc-i18n-source-generation
+repo_name: bcc-code/bcc-i18n-source-generation
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - content.code.copy
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+validation:
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: info
+    unrecognized_links: warn
+
+nav:
+  - Home: index.md
+  - Tutorial:
+      - Your first translated app: tutorials/getting-started.md
+  - How-to guides:
+      - Setup:
+          - Add translation files: how-to/add-translation-files.md
+          - Set the fallback language: how-to/set-fallback-language.md
+          - Set the generated namespace: how-to/set-generated-namespace.md
+          - Map cultures with aliases: how-to/configure-language-aliases.md
+          - Reference from source: how-to/reference-from-source.md
+      - Writing messages:
+          - Format numbers and dates: how-to/format-numbers-and-dates.md
+          - Pluralize a message: how-to/pluralize-messages.md
+          - Share files with vue-i18n: how-to/share-messages-with-vue-i18n.md
+      - Using the generated code:
+          - Translate for a specific culture: how-to/use-an-explicit-culture.md
+          - Format a message by key: how-to/format-a-message-by-key.md
+          - List languages, keys and strings: how-to/list-languages-and-keys.md
+          - Use IStringLocalizer: how-to/use-istringlocalizer.md
+      - Development and build:
+          - Change diagnostic severity: how-to/change-diagnostic-severity.md
+          - Hot reload: how-to/use-hot-reload.md
+  - Reference:
+      - MSBuild properties: reference/msbuild.md
+      - Generated API: reference/generated-api.md
+      - Message syntax: reference/message-syntax.md
+      - Diagnostics: reference/diagnostics.md
+  - Explanation:
+      - Culture matching and fallback: explanation/culture-matching-and-fallback.md
+      - Plural selection: explanation/plural-selection.md
+      - Hot reload design: explanation/hot-reload.md
+      - Relation to vue-i18n: explanation/vue-i18n.md
+      - No runtime dependency: explanation/no-runtime-dependency.md
