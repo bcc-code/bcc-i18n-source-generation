@@ -127,12 +127,21 @@ With that configuration, the generator emits `MyApp.Localization.Language`, `MyA
 | I18N007 | Warning | A language file is missing keys that exist in the fallback language. One diagnostic per file lists up to 10 keys. |
 | I18N008 | Warning | A language file has keys that do not exist in the fallback language. These keys are not generated in `Language` or `LanguageKeys`. |
 
-Severity can be changed per rule in `.editorconfig`:
+These diagnostics are reported on the JSON files, so `.editorconfig` sections such as `[*.cs]` or `[*.json]` do not change their severity. Use a `.globalconfig` file in the project folder instead (the SDK picks it up automatically):
 
 ```ini
-[*.cs]
+is_global = true
 dotnet_diagnostic.I18N007.severity = none
 dotnet_diagnostic.I18N008.severity = error
+```
+
+Or set it in the project file:
+
+```xml
+<PropertyGroup>
+  <NoWarn>$(NoWarn);I18N007</NoWarn>
+  <WarningsAsErrors>$(WarningsAsErrors);I18N008</WarningsAsErrors>
+</PropertyGroup>
 ```
 
 ## Packaging and Integration Testing
