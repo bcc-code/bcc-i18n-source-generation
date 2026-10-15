@@ -147,6 +147,66 @@ public class LanguageStringsApiTests
   }
 
   [Fact]
+  public void Format_decodes_literal_escapes_like_the_language_members()
+  {
+    var files = new[]
+    {
+        new TestAdditionalFile(
+            "./en.json",
+            """
+            {
+              "quote": "{'It\\'s'}",
+              "slash": "{'a\\\\b'}",
+              "unicode": "{'\\u0041\\U01F600'}",
+              "pipe": "{'it\\'s | x'} | other",
+              "badEscape": "{'bad\\x'}",
+              "badHex": "{'\\u00zz'}",
+              "surrogate": "{'\\uD800'}",
+              "unclosed": "{'open",
+              "withParam": "{'{'}{name}{'}'}"
+            }
+            """)
+    };
+
+    var result = LocalizedLanguageTests.Run(
+        files,
+        """
+        var c = CultureInfo.InvariantCulture;
+        string F(string key, params object[] args) => LanguageStrings.Format(key, c, args);
+        return string.Join("|", F("quote"), F("slash"), F("unicode"), F("pipe", 1), F("pipe", 2), F("badEscape"), F("badHex"),
+            F("surrogate"), F("unclosed"), F("withParam", "x"),
+            Language.quote, Language.slash, Language.unicode, Language.pipe(1), Language.pipe(2), Language.badEscape, Language.badHex,
+            Language.surrogate, Language.unclosed);
+        """);
+
+    var expected = new[]
+    {
+        "It's", "a\\b", "A" + char.ConvertFromUtf32(0x1F600), "it's | x", "other", "{'bad\\x'}", "{'\\u00zz'}", "{'\\uD800'}", "{'open",
+        "{x}",
+    };
+    var languageMembers = new[]
+    {
+        "It's", "a\\b", "A" + char.ConvertFromUtf32(0x1F600), "it's | x", "other", "{'bad\\x'}", "{'\\u00zz'}", "{'\\uD800'}", "{'open",
+    };
+    Assert.Equal(string.Join("|", expected.Concat(languageMembers)), result);
+  }
+
+  [Fact]
+  public void Format_does_not_overflow_for_the_smallest_counts_in_a_checked_context()
+  {
+    var result = LocalizedLanguageTests.Run(
+        Files(),
+        """
+        var en = new CultureInfo("en-US");
+        return string.Join("|", LanguageStrings.Format("two", en, int.MinValue), LanguageStrings.Format("two", en, long.MinValue),
+            LanguageStrings.Format("three", en, int.MinValue), LanguageStrings.Format("three", en, long.MinValue), LanguageStrings.Format("two", en, -1L));
+        """,
+        checkedOverflow: true);
+
+    Assert.Equal("cars|cars|many|many|car", result);
+  }
+
+  [Fact]
   public void Format_selects_plural_forms_with_the_vue_rules_per_number_of_forms()
   {
     var result = Run(

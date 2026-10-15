@@ -70,12 +70,8 @@ private static string SelectForm(string text, object?[] args)
 
     if (count < 0)
     {
-        count = -count;
-    }
-
-    if (count < 0)
-    {
-        count = long.MaxValue;
+        // long.MinValue cannot be negated, also not in a checked context.
+        count = count == long.MinValue ? long.MaxValue : -count;
     }
 
     int selected;
@@ -171,12 +167,12 @@ private static int ScanBrace(string text, int index, out string? name, out strin
     isLiteral = false;
     if (index + 1 < text.Length && text[index + 1] == '\'')
     {
-        var close = text.IndexOf(""'}"", index + 2, global::System.StringComparison.Ordinal);
-        if (close >= 0)
+        var literal = ReadLiteral(text, index, out var literalEnd);
+        if (literal != null)
         {
-            name = text.Substring(index + 2, close - index - 2);
+            name = literal;
             isLiteral = true;
-            return close + 2;
+            return literalEnd;
         }
     }
 
@@ -229,6 +225,93 @@ private static int ScanBrace(string text, int index, out string? name, out strin
     }
 
     return -1;
+}
+
+// Reads {'text'} at start with the vue-i18n escapes \' \\ \uXXXX and \UXXXXXX. Returns null when it is not a
+// literal (invalid escape or no end).
+private static string? ReadLiteral(string text, int start, out int end)
+{
+    var builder = new global::System.Text.StringBuilder();
+    var index = start + 2;
+    while (index < text.Length)
+    {
+        var character = text[index];
+        if (character == '\'' && index + 1 < text.Length && text[index + 1] == '}')
+        {
+            end = index + 2;
+            return builder.ToString();
+        }
+
+        if (character != '\\')
+        {
+            builder.Append(character);
+            index++;
+            continue;
+        }
+
+        if (index + 1 >= text.Length)
+        {
+            break;
+        }
+
+        var escape = text[index + 1];
+        if (escape == '\'' || escape == '\\')
+        {
+            builder.Append(escape);
+            index += 2;
+        }
+        else if (escape == 'u' || escape == 'U')
+        {
+            var length = escape == 'u' ? 4 : 6;
+            var codePoint = ReadCodePoint(text, index + 2, length);
+            if (codePoint == null)
+            {
+                break;
+            }
+
+            builder.Append(codePoint);
+            index += 2 + length;
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    end = start;
+    return null;
+}
+
+private static string? ReadCodePoint(string text, int start, int length)
+{
+    if (start + length > text.Length)
+    {
+        return null;
+    }
+
+    var number = 0;
+    for (var index = start; index < start + length; index++)
+    {
+        var character = text[index];
+        var digit = character >= '0' && character <= '9' ? character - '0'
+            : character >= 'a' && character <= 'f' ? character - 'a' + 10
+            : character >= 'A' && character <= 'F' ? character - 'A' + 10
+            : -1;
+        if (digit < 0)
+        {
+            return null;
+        }
+
+        number = (number * 16) + digit;
+    }
+
+    // Surrogates and values above U+10FFFF are not valid code points.
+    if (number > 0x10FFFF || (number >= 0xD800 && number <= 0xDFFF))
+    {
+        return null;
+    }
+
+    return char.ConvertFromUtf32(number);
 }
 
 // Same characters as \w in a regular expression.
