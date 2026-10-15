@@ -7,11 +7,10 @@ namespace BccCode.I18N.SourceGen;
 
 internal static class I18NLanguageGenerator
 {
-    private const string CurrentLanguage = "global::System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName";
-
     public static void AddSource(SourceProductionContext context, TranslationModelSet translations)
     {
         const string className = "Language";
+        var currentLanguage = GetCurrentLanguageExpression(translations.GeneratedNamespace);
 
         var translationsByKey = BuildTranslationsByKey(translations.Files);
         var filePathsByLanguage = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -21,7 +20,7 @@ internal static class I18NLanguageGenerator
         }
 
         var root = TranslationTreeBuilder.BuildTree(translations.FallbackFile.Entries);
-        var generationContext = new GenerationContext(context, translationsByKey, filePathsByLanguage, translations.FallbackLanguage);
+        var generationContext = new GenerationContext(context, translationsByKey, filePathsByLanguage, translations.FallbackLanguage, currentLanguage);
 
         var writer = GeneratedFile.Begin(translations.GeneratedNamespace, className);
         WriteMembers(writer, generationContext, root);
@@ -34,8 +33,10 @@ internal static class I18NLanguageGenerator
             SourceProductionContext sourceContext,
             Dictionary<string, Dictionary<string, string>> translationsByKey,
             Dictionary<string, string> filePathsByLanguage,
-            string fallbackLanguage)
+            string fallbackLanguage,
+            string currentLanguage)
         {
+            CurrentLanguage = currentLanguage;
             SourceContext = sourceContext;
             TranslationsByKey = translationsByKey;
             FilePathsByLanguage = filePathsByLanguage;
@@ -49,7 +50,14 @@ internal static class I18NLanguageGenerator
         public Dictionary<string, string> FilePathsByLanguage { get; }
 
         public string FallbackLanguage { get; }
+
+        public string CurrentLanguage { get; }
     }
+
+    // Fully qualified so that a nested class in Language named LanguageStrings cannot shadow it.
+    private static string GetCurrentLanguageExpression(string generatedNamespace) =>
+        (string.IsNullOrWhiteSpace(generatedNamespace) ? "global::" : "global::" + generatedNamespace + ".") +
+        "LanguageStrings.ResolveLanguage(global::System.Globalization.CultureInfo.CurrentUICulture)";
 
     private static Dictionary<string, Dictionary<string, string>> BuildTranslationsByKey(EquatableArray<LanguageFileModel> files)
     {
@@ -146,7 +154,7 @@ internal static class I18NLanguageGenerator
         if (isPlural)
         {
             writer.Append('(').Append(identifiers[0]).Append(", ")
-                .Append(CurrentLanguage).AppendLine(") switch");
+                .Append(context.CurrentLanguage).AppendLine(") switch");
             writer.OpenBlock();
 
             foreach (var translation in otherTranslations)
@@ -158,7 +166,7 @@ internal static class I18NLanguageGenerator
         }
         else
         {
-            writer.Append(CurrentLanguage).AppendLine(" switch");
+            writer.Append(context.CurrentLanguage).AppendLine(" switch");
             writer.OpenBlock();
 
             foreach (var translation in otherTranslations)

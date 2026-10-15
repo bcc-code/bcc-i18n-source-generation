@@ -94,7 +94,7 @@ public class SourceGeneratorWithAdditionalFilesTests
     Assert.Contains("_ => \"hello world\"", languageSource, StringComparison.Ordinal);
 
     var dictionarySource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "LanguageStrings.g.cs");
-    Assert.Contains("\"en\" => GetStringOrNull0(key),", dictionarySource, StringComparison.Ordinal);
+    Assert.Contains("\"no\" => GetStringOrNull1(key) ?? GetStringOrNull0(key),", dictionarySource, StringComparison.Ordinal);
     Assert.Contains("_ => GetStringOrNull0(key),", dictionarySource, StringComparison.Ordinal);
   }
 
@@ -107,7 +107,7 @@ public class SourceGeneratorWithAdditionalFilesTests
         fallbackLanguage: "no");
 
     var dictionarySource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "LanguageStrings.g.cs");
-    Assert.Contains("\"no\" => GetStringOrNull1(key),", dictionarySource, StringComparison.Ordinal);
+    Assert.Contains("\"en\" => GetStringOrNull0(key) ?? GetStringOrNull1(key),", dictionarySource, StringComparison.Ordinal);
     Assert.Contains("_ => GetStringOrNull1(key),", dictionarySource, StringComparison.Ordinal);
   }
 

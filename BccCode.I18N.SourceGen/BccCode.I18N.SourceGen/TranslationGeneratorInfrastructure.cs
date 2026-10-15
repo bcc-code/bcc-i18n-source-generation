@@ -22,8 +22,9 @@ internal static class TranslationGeneratorDefaults
 
 internal readonly struct TranslationGeneratorOptions : IEquatable<TranslationGeneratorOptions>
 {
-    public TranslationGeneratorOptions(string fallbackLanguage, string generatedNamespace)
+    public TranslationGeneratorOptions(string fallbackLanguage, string generatedNamespace, string languageAliases = "")
     {
+        LanguageAliases = languageAliases?.Trim() ?? string.Empty;
         FallbackLanguage = string.IsNullOrWhiteSpace(fallbackLanguage)
             ? TranslationGeneratorDefaults.DefaultFallbackLanguage
             : fallbackLanguage.Trim().ToLowerInvariant();
@@ -34,11 +35,15 @@ internal readonly struct TranslationGeneratorOptions : IEquatable<TranslationGen
 
     public string GeneratedNamespace { get; }
 
+    /// <summary>The raw value of the I18NLanguageAliases property, e.g. "nb=no;nn=no".</summary>
+    public string LanguageAliases { get; }
+
     public bool HasGeneratedNamespace => !string.IsNullOrWhiteSpace(GeneratedNamespace);
 
     public bool Equals(TranslationGeneratorOptions other) =>
         string.Equals(FallbackLanguage, other.FallbackLanguage, StringComparison.Ordinal) &&
-        string.Equals(GeneratedNamespace, other.GeneratedNamespace, StringComparison.Ordinal);
+        string.Equals(GeneratedNamespace, other.GeneratedNamespace, StringComparison.Ordinal) &&
+        string.Equals(LanguageAliases, other.LanguageAliases, StringComparison.Ordinal);
 
     public override bool Equals(object? obj) => obj is TranslationGeneratorOptions other && Equals(other);
 
@@ -48,6 +53,7 @@ internal readonly struct TranslationGeneratorOptions : IEquatable<TranslationGen
         {
             var hashCode = FallbackLanguage != null ? StringComparer.Ordinal.GetHashCode(FallbackLanguage) : 0;
             hashCode = (hashCode * 397) ^ (GeneratedNamespace != null ? StringComparer.Ordinal.GetHashCode(GeneratedNamespace) : 0);
+            hashCode = (hashCode * 397) ^ (LanguageAliases != null ? StringComparer.Ordinal.GetHashCode(LanguageAliases) : 0);
             return hashCode;
         }
     }
@@ -115,6 +121,83 @@ internal static class TranslationGeneratorDiagnostics
         category: Category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor LanguageAliasTargetMissing = new(
+        id: "I18N009",
+        title: "Language alias target missing",
+        messageFormat: "{0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+}
+
+internal readonly struct LanguageAliasModel : IEquatable<LanguageAliasModel>
+{
+    public LanguageAliasModel(string source, string target)
+    {
+        Source = source;
+        Target = target;
+    }
+
+    public string Source { get; }
+
+    public string Target { get; }
+
+    public bool Equals(LanguageAliasModel other) =>
+        string.Equals(Source, other.Source, StringComparison.Ordinal) &&
+        string.Equals(Target, other.Target, StringComparison.Ordinal);
+
+    public override bool Equals(object? obj) => obj is LanguageAliasModel other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        unchecked
+        {
+            return ((Source != null ? StringComparer.Ordinal.GetHashCode(Source) : 0) * 397) ^
+                   (Target != null ? StringComparer.Ordinal.GetHashCode(Target) : 0);
+        }
+    }
+}
+
+internal static class LanguageAliasParser
+{
+    /// <summary>Aliases that apply when the project does not override them. Ignored silently when the target has no file.</summary>
+    public static readonly (string Source, string Target)[] Defaults =
+    {
+        ("nb", "no"),
+        ("nn", "no"),
+        ("no", "nb"),
+    };
+
+    /// <summary>
+    /// Parses "nb=no;nn=no". Names are trimmed and lowercased, empty entries are ignored and the last
+    /// entry for a name wins. Entries without '=' (or with an empty side) are returned as malformed.
+    /// </summary>
+    public static Dictionary<string, string> Parse(string value, List<string> malformedEntries)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var rawEntry in (value ?? string.Empty).Split(';'))
+        {
+            var entry = rawEntry.Trim();
+            if (entry.Length == 0)
+            {
+                continue;
+            }
+
+            var separator = entry.IndexOf('=');
+            var source = separator < 0 ? string.Empty : entry.Substring(0, separator).Trim().ToLowerInvariant();
+            var target = separator < 0 ? string.Empty : entry.Substring(separator + 1).Trim().ToLowerInvariant();
+            if (source.Length == 0 || target.Length == 0)
+            {
+                malformedEntries.Add(entry);
+                continue;
+            }
+
+            result[source] = target;
+        }
+
+        return result;
+    }
 }
 
 internal readonly struct TranslationEntryModel : IEquatable<TranslationEntryModel>
@@ -378,8 +461,10 @@ internal readonly struct TranslationModelSet : IEquatable<TranslationModelSet>
         EquatableArray<LanguageFileModel> files,
         EquatableArray<GeneratorDiagnosticInfo> diagnostics,
         bool hasFallbackFile,
-        LanguageFileModel fallbackFile)
+        LanguageFileModel fallbackFile,
+        EquatableArray<LanguageAliasModel> aliases)
     {
+        Aliases = aliases;
         Options = options;
         Files = files;
         Diagnostics = diagnostics;
@@ -403,7 +488,11 @@ internal readonly struct TranslationModelSet : IEquatable<TranslationModelSet>
 
     public LanguageFileModel FallbackFile { get; }
 
+    /// <summary>Effective aliases: the target has a file and the alias name has no file of its own.</summary>
+    public EquatableArray<LanguageAliasModel> Aliases { get; }
+
     public bool Equals(TranslationModelSet other) =>
+        Aliases.Equals(other.Aliases) &&
         Options.Equals(other.Options) &&
         Files.Equals(other.Files) &&
         Diagnostics.Equals(other.Diagnostics) &&
@@ -417,6 +506,7 @@ internal readonly struct TranslationModelSet : IEquatable<TranslationModelSet>
         unchecked
         {
             var hashCode = Options.GetHashCode();
+            hashCode = (hashCode * 397) ^ Aliases.GetHashCode();
             hashCode = (hashCode * 397) ^ Files.GetHashCode();
             hashCode = (hashCode * 397) ^ Diagnostics.GetHashCode();
             hashCode = (hashCode * 397) ^ HasFallbackFile.GetHashCode();
@@ -488,12 +578,55 @@ internal static class TranslationModelSetFactory
                 $"Fallback language '{normalizedFallbackLanguage}' was not found among the AdditionalFiles JSON translations."));
         }
 
+        var aliases = ResolveAliases(options.LanguageAliases, uniqueFiles, diagnosticBuilder);
+
         return new TranslationModelSet(
-            new TranslationGeneratorOptions(normalizedFallbackLanguage, options.GeneratedNamespace),
+            new TranslationGeneratorOptions(normalizedFallbackLanguage, options.GeneratedNamespace, options.LanguageAliases),
             new EquatableArray<LanguageFileModel>(uniqueFiles),
             new EquatableArray<GeneratorDiagnosticInfo>(diagnosticBuilder.ToImmutable()),
             hasFallbackFile,
-            fallbackFile);
+            fallbackFile,
+            aliases);
+    }
+
+    private static EquatableArray<LanguageAliasModel> ResolveAliases(
+        string userAliases,
+        ImmutableArray<LanguageFileModel> files,
+        ImmutableArray<GeneratorDiagnosticInfo>.Builder diagnostics)
+    {
+        var languages = new HashSet<string>(files.Select(static file => file.Language), StringComparer.OrdinalIgnoreCase);
+
+        var malformedEntries = new List<string>();
+        var user = LanguageAliasParser.Parse(userAliases, malformedEntries);
+        foreach (var entry in malformedEntries)
+        {
+            diagnostics.Add(new GeneratorDiagnosticInfo(
+                TranslationGeneratorDiagnostics.LanguageAliasTargetMissing,
+                $"Language alias '{entry}' in I18NLanguageAliases is malformed. Use the format 'source=target', e.g. 'nb=no;nn=no'."));
+        }
+
+        var effective = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (source, target) in LanguageAliasParser.Defaults)
+        {
+            effective[source] = target;
+        }
+
+        foreach (var pair in user)
+        {
+            effective[pair.Key] = pair.Value;
+            if (!languages.Contains(pair.Value))
+            {
+                diagnostics.Add(new GeneratorDiagnosticInfo(
+                    TranslationGeneratorDiagnostics.LanguageAliasTargetMissing,
+                    $"Language alias '{pair.Key}={pair.Value}' in I18NLanguageAliases points to language '{pair.Value}', which has no translation file."));
+            }
+        }
+
+        return new EquatableArray<LanguageAliasModel>(effective
+            .Where(pair => languages.Contains(pair.Value) && !languages.Contains(pair.Key))
+            .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
+            .Select(static pair => new LanguageAliasModel(pair.Key, pair.Value))
+            .ToImmutableArray());
     }
 
     private static string NormalizeLanguage(string language)
@@ -560,10 +693,12 @@ internal static class TranslationFileParser
     {
         optionsProvider.GlobalOptions.TryGetValue("build_property.FallbackLanguage", out var fallbackLanguage);
         optionsProvider.GlobalOptions.TryGetValue("build_property.GeneratedNamespace", out var generatedNamespace);
+        optionsProvider.GlobalOptions.TryGetValue("build_property.I18NLanguageAliases", out var languageAliases);
 
         return new TranslationGeneratorOptions(
             fallbackLanguage ?? string.Empty,
-            generatedNamespace ?? string.Empty);
+            generatedNamespace ?? string.Empty,
+            languageAliases ?? string.Empty);
     }
 
     private static void Flatten(
