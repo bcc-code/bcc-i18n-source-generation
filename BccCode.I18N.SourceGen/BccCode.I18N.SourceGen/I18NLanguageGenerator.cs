@@ -509,9 +509,10 @@ internal static class I18NLanguageGenerator
 
         if (isPlural)
         {
-            // vue-i18n uses the absolute value of the count to pick the variant.
+            // vue-i18n uses the absolute value of the count to pick the variant. The count is widened to long
+            // first, so that int.MinValue cannot overflow (also in a checked context). The int itself is used for formatting.
             var count = identifiers[0];
-            writer.Append('(').Append(count).Append(" < 0 ? -").Append(count).Append(" : ").Append(count).Append(", ")
+            writer.Append("(global::System.Math.Abs((long)").Append(count).Append("), ")
                 .Append(leaf.LanguageParameter).AppendLine(") switch");
             writer.OpenBlock();
 

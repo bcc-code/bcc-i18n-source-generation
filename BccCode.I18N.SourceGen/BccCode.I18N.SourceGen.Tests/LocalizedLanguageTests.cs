@@ -318,7 +318,7 @@ public class LocalizedLanguageTests
     Assert.Equal("norsk|only english|null|missing|english {x:N2}|english {x:N2}", result);
   }
 
-  internal static string Run(TestAdditionalFile[] files, string body)
+  internal static string Run(TestAdditionalFile[] files, string body, bool checkedOverflow = false)
   {
     var (_, runResult, compilation) = GeneratorTestHelpers.RunGenerator(
         new I18NSourceGenerator(),
@@ -332,6 +332,10 @@ public class LocalizedLanguageTests
         body +
         "\n} } }");
     compilation = compilation.AddSyntaxTrees(probe);
+    if (checkedOverflow)
+    {
+      compilation = compilation.WithOptions(((CSharpCompilationOptions)compilation.Options).WithOverflowChecks(true));
+    }
 
     using var stream = new MemoryStream();
     var emitResult = compilation.Emit(stream);
