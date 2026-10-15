@@ -84,17 +84,10 @@ internal static class TranslationMessageSyntax
 
             if (character == '{')
             {
-                if (position + 1 < value.Length && value[position + 1] == '\'')
+                if (position + 1 < value.Length && value[position + 1] == '\'' &&
+                    TryReadLiteral(value, position, out var literalText, out var literalEnd))
                 {
-                    var close = value.IndexOf("'}", position + 2, StringComparison.Ordinal);
-                    if (close >= 0)
-                    {
-                        token = new MessageToken(
-                            MessageTokenKind.Literal,
-                            position,
-                            close + 2 - position,
-                            value.Substring(position + 2, close - position - 2));
-                    }
+                    token = new MessageToken(MessageTokenKind.Literal, position, literalEnd - position, literalText);
                 }
 
                 if (token is null)
@@ -164,6 +157,91 @@ internal static class TranslationMessageSyntax
         return tokens;
     }
 
+    /// <summary>
+    /// Reads <c>{'text'}</c> starting at <paramref name="start"/>. Like vue-i18n, <c>\'</c>, <c>\\</c>,
+    /// <c>\uXXXX</c> and <c>\UXXXXXX</c> are escapes. An invalid escape or a missing end means that this is not a literal.
+    /// </summary>
+    private static bool TryReadLiteral(string value, int start, out string text, out int end)
+    {
+        var builder = new StringBuilder();
+        var index = start + 2;
+        while (index < value.Length)
+        {
+            var character = value[index];
+            if (character == '\'' && index + 1 < value.Length && value[index + 1] == '}')
+            {
+                text = builder.ToString();
+                end = index + 2;
+                return true;
+            }
+
+            if (character != '\\')
+            {
+                builder.Append(character);
+                index++;
+                continue;
+            }
+
+            if (index + 1 >= value.Length)
+            {
+                break;
+            }
+
+            var escape = value[index + 1];
+            if (escape == '\'' || escape == '\\')
+            {
+                builder.Append(escape);
+                index += 2;
+            }
+            else if ((escape == 'u' || escape == 'U') && TryReadCodePoint(value, index + 2, escape == 'u' ? 4 : 6, out var codePoint))
+            {
+                builder.Append(codePoint);
+                index += 2 + (escape == 'u' ? 4 : 6);
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        text = string.Empty;
+        end = start;
+        return false;
+    }
+
+    private static bool TryReadCodePoint(string value, int start, int length, out string codePoint)
+    {
+        codePoint = string.Empty;
+        if (start + length > value.Length)
+        {
+            return false;
+        }
+
+        var number = 0;
+        for (var index = start; index < start + length; index++)
+        {
+            var digit = Uri.IsHexDigit(value[index]) ? Convert.ToInt32(value[index].ToString(), 16) : -1;
+            if (digit < 0)
+            {
+                return false;
+            }
+
+            number = (number * 16) + digit;
+        }
+
+        // Surrogates and values above U+10FFFF are not code points that can be written to the generated source.
+        if (number > 0x10FFFF || (number >= 0xD800 && number <= 0xDFFF))
+        {
+            return false;
+        }
+
+        codePoint = char.ConvertFromUtf32(number);
+        return true;
+    }
+
+    /// <summary>Writes text as the content of a <c>{'..'}</c> literal, so that it is read back as the same text.</summary>
+    public static string EscapeLiteral(string text) => text.Replace("\\", "\\\\").Replace("'", "\\'");
+
     public static bool IsPlural(string? value)
     {
         if (value is null || value.IndexOf('|') < 0)
@@ -211,7 +289,7 @@ internal static class TranslationMessageSyntax
             var isText = token.Kind is MessageTokenKind.Text or MessageTokenKind.Pipe;
             if (token.Kind == MessageTokenKind.Literal)
             {
-                builder.Append("{'").Append(ApplyToText(token.Text, modifier, first)).Append("'}");
+                builder.Append("{'").Append(EscapeLiteral(ApplyToText(token.Text, modifier, first))).Append("'}");
             }
             else if (isText)
             {
@@ -285,7 +363,7 @@ internal static class TranslationLinkResolver
                 if (value.IndexOf('@') >= 0)
                 {
                     var context = new Context(file, languageValues, fallbackValues, entry.KeyPath, diagnostics);
-                    value = context.ExpandLinks(value, new List<string> { entry.KeyPath }, isTopLevel: true);
+                    value = context.ExpandLinks(value, new List<string> { entry.KeyPath });
                 }
 
                 entries.Add(new TranslationEntryModel(entry.KeyPath, value));
@@ -320,7 +398,7 @@ internal static class TranslationLinkResolver
             _diagnostics = diagnostics;
         }
 
-        public string ExpandLinks(string value, List<string> stack, bool isTopLevel)
+        public string ExpandLinks(string value, List<string> stack)
         {
             if (value.IndexOf('@') < 0)
             {
@@ -339,7 +417,7 @@ internal static class TranslationLinkResolver
                 builder.Append(value, position, token.Start - position);
                 position = token.Start + token.Length;
 
-                var replacement = ExpandLink(token, stack, isTopLevel);
+                var replacement = ExpandLink(token, stack);
                 builder.Append(replacement ?? value.Substring(token.Start, token.Length));
             }
 
@@ -347,7 +425,7 @@ internal static class TranslationLinkResolver
             return builder.ToString();
         }
 
-        private string? ExpandLink(MessageToken link, List<string> stack, bool isTopLevel)
+        private string? ExpandLink(MessageToken link, List<string> stack)
         {
             var key = link.Text;
             if (stack.Contains(key, StringComparer.Ordinal))
@@ -364,26 +442,21 @@ internal static class TranslationLinkResolver
 
             if (!_languageValues.TryGetValue(key, out var target) && (_fallbackValues is null || !_fallbackValues.TryGetValue(key, out target)))
             {
-                if (isTopLevel)
-                {
-                    Report($"linked message '@:{key}' does not match a translation key");
-                }
+                // Failures anywhere in the expansion are reported for the key that is being resolved (once per language and key).
+                Report($"linked message '@:{key}' does not match a translation key");
 
                 return null;
             }
 
             if (TranslationMessageSyntax.IsPlural(target))
             {
-                if (isTopLevel)
-                {
-                    Report($"linked message '@:{key}' points to a plural message, which cannot be linked");
-                }
+                Report($"linked message '@:{key}' points to a plural message, which cannot be linked");
 
                 return null;
             }
 
             stack.Add(key);
-            var expanded = ExpandLinks(target, stack, isTopLevel: false);
+            var expanded = ExpandLinks(target, stack);
             stack.RemoveAt(stack.Count - 1);
             return TranslationMessageSyntax.ApplyModifier(expanded, link.Modifier);
         }

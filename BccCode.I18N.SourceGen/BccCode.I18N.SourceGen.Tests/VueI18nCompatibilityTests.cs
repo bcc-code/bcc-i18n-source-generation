@@ -28,7 +28,7 @@ public class VueI18nCompatibilityTests
                                   }
                                   """;
 
-  private static string Run(TestAdditionalFile[] files, string body) => LocalizedLanguageTests.Run(files, body);
+  private static string Run(TestAdditionalFile[] files, string body, bool checkedOverflow = false) => LocalizedLanguageTests.Run(files, body, checkedOverflow: checkedOverflow);
 
   [Fact]
   public void Two_forms_use_the_first_form_only_for_a_count_of_one()
@@ -232,6 +232,67 @@ public class VueI18nCompatibilityTests
         """);
 
     Assert.Equal("@:x|{x}|{Kari}|one | two|other|{'@'}:x|one {'|'} two | other", result);
+  }
+
+  [Fact]
+  public void Plural_selection_does_not_overflow_for_int_min_value_in_a_checked_context()
+  {
+    var result = Run(
+        [new TestAdditionalFile("./en.json", """{ "two": "{count} car | {count} cars", "three": "none | one | many" }""")],
+        """return string.Join("|", Language.two(int.MinValue), Language.three(int.MinValue), Language.two(int.MaxValue), new LocalizedLanguage(CultureInfo.InvariantCulture).two(int.MinValue));""",
+        checkedOverflow: true);
+
+    Assert.Equal("-2147483648 cars|many|2147483647 cars|-2147483648 cars", result);
+  }
+
+  [Fact]
+  public void Literals_decode_vue_i18n_escapes()
+  {
+    var result = Run(
+        [
+            new TestAdditionalFile(
+                "./en.json",
+                """
+                {
+                  "quote": "{'It\\'s'}",
+                  "slash": "{'a\\\\b'}",
+                  "unicode": "{'\\u0041\\U01F600'}",
+                  "pipe": "{'it\\'s | x'} | other",
+                  "badEscape": "{'bad\\x'}",
+                  "badHex": "{'\\u00zz'}",
+                  "surrogate": "{'\\uD800'}",
+                  "unclosed": "{'open",
+                  "src": "x {'it\\'s'}",
+                  "link": "@.upper:src"
+                }
+                """)
+        ],
+        """
+        return string.Join("|", Language.quote, Language.slash, Language.unicode, Language.pipe(1), Language.pipe(2), Language.badEscape, Language.badHex,
+            Language.surrogate, Language.unclosed, Language.link, new LocalizedLanguage(CultureInfo.InvariantCulture).quote,
+            LanguageStrings.GetString("quote"), LanguageStrings.GetString("link"));
+        """);
+
+    Assert.Equal(
+        "It's|a\\b|A" + char.ConvertFromUtf32(0x1F600) + "|it's | x|other|{'bad\\x'}|{'\\u00zz'}|{'\\uD800'}|{'open|X IT'S|It's|{'It\\'s'}|X {'IT\\'S'}",
+        result);
+  }
+
+  [Fact]
+  public void Reports_I18N010_when_a_failure_happens_in_a_nested_expansion_of_the_key_being_resolved()
+  {
+    var (_, runResult, _) = GeneratorTestHelpers.RunGenerator(
+        new I18NSourceGenerator(),
+        [
+            new TestAdditionalFile("./en.json", """{ "a": "@:b", "b": "@:target", "target": "text" }"""),
+            new TestAdditionalFile("./no.json", """{ "a": "@:b", "target": "one | many" }""")
+        ],
+        fallbackLanguage: "en");
+
+    var diagnostic = Assert.Single(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult), static d => d.Id == "I18N010");
+    Assert.Equal("./no.json", diagnostic.Location.GetLineSpan().Path);
+    Assert.Contains("'a'", diagnostic.GetMessage(), StringComparison.Ordinal);
+    Assert.Contains("plural", diagnostic.GetMessage(), StringComparison.Ordinal);
   }
 
   [Fact]

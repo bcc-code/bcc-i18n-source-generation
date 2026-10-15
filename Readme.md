@@ -87,6 +87,8 @@ string? maybe = LanguageStrings.GetStringOrNull("message.hello", new CultureInfo
 
 `LocalizedLanguage` is a readonly struct in the generated namespace. Its members have the same names, parameters and return types as in `Language`. It resolves the language once in the constructor with `LanguageStrings.ResolveLanguage(culture)`. Groups are returned as small structs in the generated `LocalizedLanguageGroups` class (hidden from completion; the type names are derived from the key path and given a numeric suffix on a collision, so they never clash with your keys). `default(LocalizedLanguage)` uses the fallback language and invariant formatting.
 
+A struct member cannot have the name of its struct. When a root key is named `LocalizedLanguage`, the instance member in `LocalizedLanguage` gets a `_` suffix (`LocalizedLanguage_`, and a number if that name is taken too). `Language` is not affected. The same rule applies to a group member that has the name of its group struct.
+
 Which culture is used for what:
 
 | API | Language selection | Number/date formatting |
@@ -176,7 +178,7 @@ Translation files are often shared with a Vue frontend that uses vue-i18n (v9+).
 - **List placeholders**: `{0}`, `{1}`. They become parameters `_0`, `_1`, in order of first appearance in the fallback text. In a plural message the first placeholder in the fallback text is the `int` count (`"{0} item | {0} items"` gives `item(int _0)`).
 - **Plural rules**: vue-i18n's default rules for 2, 3 and more variants, using the absolute value of the count (see above).
 - **Linked messages**: `@:key`, `@:{'key'}`, and the modifiers `@.lower:key`, `@.upper:key`, `@.capitalize:key` (also with `{'key'}`). A bare key may contain letters, digits, `_`, `-`, `$` and `.`. A trailing `.` ends the sentence and is not part of the key, so `"Press @:common.save."` links `common.save`. `post@bcc.no` is not a link.
-- **Literal interpolation**: `{'text'}` is output as `text`. Use it for `{'@'}`, `{'{'}`, `{'}'}` and `{'|'}`. A `|` inside a literal does not separate plural variants, and an `@` inside a literal does not start a link.
+- **Literal interpolation**: `{'text'}` is output as `text`. Use it for `{'@'}`, `{'{'}`, `{'}'}` and `{'|'}`. A `|` inside a literal does not separate plural variants, and an `@` inside a literal does not start a link. Like in vue-i18n, a literal can contain the escapes `\'`, `\\`, `\uXXXX` (4 hex digits) and `\UXXXXXX` (6 hex digits), so `{'It\'s'}` is `It's`. A literal with an invalid escape (a surrogate or a value above U+10FFFF is also invalid) or without an end is not a literal and stays plain text.
 
 Linked messages are resolved when the code is generated, so `Language`, `LocalizedLanguage` and `LanguageStrings` all contain the final text. A link is replaced by the target key's value in the same language, or in the fallback language when that language does not have the key. Links inside the target are resolved too, and placeholders in the target become part of the message and its parameters. Modifiers change the text only, not placeholder names. Capitalize changes the first character of the message when it is text. Keys do not change, so `LanguageKeys` is unaffected.
 
@@ -268,6 +270,38 @@ With that configuration, the generator emits `MyApp.Localization.Language`, `MyA
 > ```
 >
 > When consumed via NuGet, this import happens automatically.
+
+## Diagnostics
+
+| ID | Severity | Meaning |
+|----|----------|---------|
+| I18N001 | Error | A translation file is not valid JSON. |
+| I18N002 | Error | A translation file does not have an object as its root. |
+| I18N003 | Error | A translation file contains an unsupported value. |
+| I18N004 | Error | The fallback language file is missing. |
+| I18N005 | Error | More than one file exists for the same language. |
+| I18N006 | Warning | Placeholders in a translation do not match the fallback language. |
+| I18N007 | Warning | A language file is missing keys that exist in the fallback language. One diagnostic per file lists up to 10 keys. |
+| I18N008 | Warning | A language file has keys that do not exist in the fallback language. These keys are not generated in `Language` or `LanguageKeys`. |
+| I18N009 | Warning | A language alias in `I18NLanguageAliases` is malformed or points to a language without a translation file. |
+| I18N010 | Warning | A linked message (`@:key`) points to an unknown key, is part of a cycle or points to a plural message. |
+
+These diagnostics are reported on the JSON files, so `.editorconfig` sections such as `[*.cs]` or `[*.json]` do not change their severity. Use a `.globalconfig` file in the project folder instead (the SDK picks it up automatically):
+
+```ini
+is_global = true
+dotnet_diagnostic.I18N007.severity = none
+dotnet_diagnostic.I18N008.severity = error
+```
+
+Or set it in the project file:
+
+```xml
+<PropertyGroup>
+  <NoWarn>$(NoWarn);I18N007</NoWarn>
+  <WarningsAsErrors>$(WarningsAsErrors);I18N008</WarningsAsErrors>
+</PropertyGroup>
+```
 
 ## Packaging and Integration Testing
 

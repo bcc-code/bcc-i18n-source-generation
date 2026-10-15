@@ -132,6 +132,71 @@ public class LocalizedLanguageTests
   }
 
   [Fact]
+  public void A_root_leaf_named_like_the_struct_gets_an_underscore_suffix_on_the_instance_member()
+  {
+    var result = Run(
+        [new TestAdditionalFile("./en.json", """{ "LocalizedLanguage": "leaf", "LocalizedLanguage_": "taken", "other": "x" }""")],
+        """
+        var language = new LocalizedLanguage(CultureInfo.InvariantCulture);
+        return string.Join("|", Language.LocalizedLanguage, Language.LocalizedLanguage_, language.LocalizedLanguage_2, language.LocalizedLanguage_, language.other);
+        """);
+
+    // The member that collides with the struct name is renamed. "LocalizedLanguage_" already exists, so it gets a number.
+    Assert.Equal("leaf|taken|leaf|taken|x", result);
+  }
+
+  [Fact]
+  public void A_root_group_named_like_the_struct_gets_an_underscore_suffix_on_the_instance_member()
+  {
+    var result = Run(
+        [new TestAdditionalFile("./en.json", """{ "LocalizedLanguage": { "a": "grouped" } }""")],
+        """
+        var language = new LocalizedLanguage(CultureInfo.InvariantCulture);
+        return Language.LocalizedLanguage.a + "|" + language.LocalizedLanguage_.a;
+        """);
+
+    Assert.Equal("grouped|grouped", result);
+  }
+
+  [Fact]
+  public void Internal_field_and_parameter_names_do_not_collide_with_keys_or_placeholders()
+  {
+    var result = Run(
+        [
+            new TestAdditionalFile(
+                "./en.json",
+                """
+                {
+                  "__culture": "c",
+                  "__language": "l",
+                  "__provider": "p",
+                  "g": {
+                    "__culture": "gc",
+                    "__language": "gl",
+                    "__provider": "gp",
+                    "ph": "{__culture}/{__language}/{__provider}/{this}"
+                  },
+                  "ph": "{__culture}-{__language}-{__provider}-{this}",
+                  "plural": "{__language} zero | {__language} one | {__language} many"
+                }
+                """),
+            new TestAdditionalFile(
+                "./no.json",
+                """{ "ph": "{__this_is_not_used}", "g": { "ph": "{__culture}/{__language}/{__provider}/{this}" } }""")
+        ],
+        """
+        var l = new LocalizedLanguage(new CultureInfo("en-US"));
+        var no = new LocalizedLanguage(new CultureInfo("nb-NO"));
+        return string.Join("|", l.__culture, l.__language, l.__provider, l.g.__culture, l.g.__language, l.g.__provider,
+            l.ph("a", "b", "c", "d"), l.g.ph("a", "b", "c", "d"), no.g.ph("a", "b", "c", "d"), no.ph("a", "b", "c", "d"),
+            Language.__culture, Language.g.__language, Language.ph("a", "b", "c", "d"), Language.g.ph("a", "b", "c", "d"),
+            l.plural(1), l.plural(2), Language.plural(1));
+        """);
+
+    Assert.Equal("c|l|p|gc|gl|gp|a-b-c-d|a/b/c/d|a/b/c/d|a-b-c-d|c|gl|a-b-c-d|a/b/c/d|1 one|2 many|1 one", result);
+  }
+
+  [Fact]
   public void Group_struct_types_are_hidden_from_completion()
   {
     var (_, _, compilation) = GeneratorTestHelpers.RunGenerator(
@@ -257,7 +322,8 @@ public class LocalizedLanguageTests
       TestAdditionalFile[] files,
       string body,
       bool referenceLocalization = false,
-      string[]? extraSources = null)
+      string[]? extraSources = null,
+      bool checkedOverflow = false)
   {
     var (_, runResult, compilation) = GeneratorTestHelpers.RunGenerator(
         new I18NSourceGenerator(),
@@ -273,6 +339,10 @@ public class LocalizedLanguageTests
         body +
         "\n} } }");
     compilation = compilation.AddSyntaxTrees(probe);
+    if (checkedOverflow)
+    {
+      compilation = compilation.WithOptions(((CSharpCompilationOptions)compilation.Options).WithOverflowChecks(true));
+    }
 
     using var stream = new MemoryStream();
     var emitResult = compilation.Emit(stream);

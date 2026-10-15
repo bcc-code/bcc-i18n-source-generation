@@ -280,7 +280,8 @@ public class LanguageStringsApiTests
 
     Assert.DoesNotContain(compilation.SyntaxTrees, static t => Path.GetFileName(t.FilePath).StartsWith("LanguageStringLocalizer", StringComparison.Ordinal));
     Assert.DoesNotContain(compilation.GetDiagnostics(), static d => d.Severity == DiagnosticSeverity.Error);
-    Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
+    // The languages intentionally differ in keys, which is reported as I18N007.
+    Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult).Where(static d => d.Id != "I18N007"));
   }
 
   [Fact]
@@ -314,7 +315,8 @@ public class LanguageStringsApiTests
         fallbackLanguage: "en",
         referenceLocalization: true);
 
-    Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
+    // The languages intentionally differ in keys, which is reported as I18N007.
+    Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult).Where(static d => d.Id != "I18N007"));
     Assert.DoesNotContain(compilation.GetDiagnostics(), static d => d.Severity == DiagnosticSeverity.Error);
     Assert.DoesNotContain("WithCulture", GeneratorTestHelpers.GetGeneratedSource(compilation, "LanguageStringLocalizer.g.cs"), StringComparison.Ordinal);
   }

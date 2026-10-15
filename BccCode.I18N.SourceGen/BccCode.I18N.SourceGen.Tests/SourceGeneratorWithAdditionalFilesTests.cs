@@ -247,7 +247,8 @@ public class SourceGeneratorWithAdditionalFilesTests
         ],
         fallbackLanguage: "en");
 
-    Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
+    // de.json intentionally lacks some keys, so only the missing-key warning is expected.
+    Assert.DoesNotContain(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult), static d => d.Id != "I18N007");
 
     var languageSource = GetLanguageSource(outputCompilation);
     Assert.Contains("\"de\" => \"hallo welt\"", languageSource, StringComparison.Ordinal);
@@ -533,6 +534,96 @@ public class SourceGeneratorWithAdditionalFilesTests
   private static string GetLanguageSource(Compilation compilation) =>
       GeneratorTestHelpers.GetGeneratedSource(compilation, "Language.g.cs") +
       GeneratorTestHelpers.GetGeneratedSource(compilation, "LanguageTranslations.g.cs");
+
+  private static Diagnostic[] RunKeyDiagnostics(params TestAdditionalFile[] files) =>
+      GeneratorTestHelpers.GetGeneratorDiagnostics(
+          GeneratorTestHelpers.RunGenerator(new I18NSourceGenerator(), files, fallbackLanguage: "en").RunResult)
+          .Where(static d => d.Id is "I18N007" or "I18N008")
+          .ToArray();
+
+  [Fact]
+  public void Reports_keys_missing_from_language()
+  {
+    var diagnostic = Assert.Single(RunKeyDiagnostics(
+        new TestAdditionalFile("./en.json", """{ "a": "1", "b": "2", "c": "3" }"""),
+        new TestAdditionalFile("./no.json", """{ "b": "2" }""")));
+
+    Assert.Equal("I18N007", diagnostic.Id);
+    Assert.Equal(DiagnosticSeverity.Warning, diagnostic.Severity);
+    Assert.Equal("./no.json", diagnostic.Location.GetLineSpan().Path);
+    Assert.Equal("Language 'no' is missing 2 key(s) present in fallback language 'en': a, c", diagnostic.GetMessage());
+  }
+
+  [Fact]
+  public void Reports_keys_not_in_fallback_language()
+  {
+    var diagnostic = Assert.Single(RunKeyDiagnostics(
+        new TestAdditionalFile("./en.json", """{ "a": "1" }"""),
+        new TestAdditionalFile("./no.json", """{ "a": "1", "z": "2" }""")));
+
+    Assert.Equal("I18N008", diagnostic.Id);
+    Assert.Equal("./no.json", diagnostic.Location.GetLineSpan().Path);
+    Assert.Equal(
+        "Language 'no' has 1 key(s) not present in fallback language 'en', so they are not generated in Language or LanguageKeys: z",
+        diagnostic.GetMessage());
+  }
+
+  [Fact]
+  public void Reports_both_directions_for_one_language()
+  {
+    var diagnostics = RunKeyDiagnostics(
+        new TestAdditionalFile("./en.json", """{ "a": "1" }"""),
+        new TestAdditionalFile("./no.json", """{ "z": "2" }"""));
+
+    Assert.Equal(["I18N007", "I18N008"], diagnostics.Select(static d => d.Id).OrderBy(static id => id, StringComparer.Ordinal));
+  }
+
+  [Fact]
+  public void Truncates_key_list_after_ten_keys()
+  {
+    var keys = string.Join(", ", Enumerable.Range(1, 13).Select(static i => $"\"k{i:00}\": \"v\""));
+    var diagnostic = Assert.Single(RunKeyDiagnostics(
+        new TestAdditionalFile("./en.json", "{ " + keys + " }"),
+        new TestAdditionalFile("./no.json", "{ }")));
+
+    Assert.Equal(
+        "Language 'no' is missing 13 key(s) present in fallback language 'en': k01, k02, k03, k04, k05, k06, k07, k08, k09, k10, and 3 more",
+        diagnostic.GetMessage());
+  }
+
+  [Fact]
+  public void Reports_no_key_diagnostics_when_keys_match()
+  {
+    Assert.Empty(RunKeyDiagnostics(
+        new TestAdditionalFile("./en.json", """{ "a": { "b": "1" }, "c": "2" }"""),
+        new TestAdditionalFile("./no.json", """{ "a": { "b": "x" }, "c": "y" }""")));
+  }
+
+  [Fact]
+  public void Reports_no_key_diagnostics_when_fallback_file_is_missing()
+  {
+    Assert.Empty(RunKeyDiagnostics(new TestAdditionalFile("./no.json", """{ "a": "1" }""")));
+  }
+
+  [Fact]
+  public void Reports_nested_keys_as_dotted_paths()
+  {
+    var diagnostic = Assert.Single(RunKeyDiagnostics(
+        new TestAdditionalFile("./en.json", """{ "a": { "b": "1", "c": { "d": "2" } } }"""),
+        new TestAdditionalFile("./no.json", """{ "a": { "b": "1" } }""")));
+
+    Assert.EndsWith(": a.c.d", diagnostic.GetMessage());
+  }
+
+  [Fact]
+  public void Counts_duplicate_key_paths_once()
+  {
+    var diagnostic = Assert.Single(RunKeyDiagnostics(
+        new TestAdditionalFile("./en.json", """{ "a.b": "flat", "a": { "b": "nested" } }"""),
+        new TestAdditionalFile("./no.json", "{ }")));
+
+    Assert.Equal("Language 'no' is missing 1 key(s) present in fallback language 'en': a.b", diagnostic.GetMessage());
+  }
 
   private static TestAdditionalFile[] CreateTranslationFiles() =>
   [
