@@ -114,6 +114,27 @@ With that configuration, the generator emits `MyApp.Localization.Language`, `MyA
 >
 > When consumed via NuGet, this import happens automatically.
 
+## Diagnostics
+
+| ID | Severity | Meaning |
+|----|----------|---------|
+| I18N001 | Error | A translation file is not valid JSON. |
+| I18N002 | Error | A translation file does not have an object as its root. |
+| I18N003 | Error | A translation file contains an unsupported value. |
+| I18N004 | Error | The fallback language file is missing. |
+| I18N005 | Error | More than one file exists for the same language. |
+| I18N006 | Warning | Placeholders in a translation do not match the fallback language. |
+| I18N007 | Warning | A language file is missing keys that exist in the fallback language. One diagnostic per file lists up to 10 keys. |
+| I18N008 | Warning | A language file has keys that do not exist in the fallback language. These keys are not generated in `Language` or `LanguageKeys`. |
+
+Severity can be changed per rule in `.editorconfig`:
+
+```ini
+[*.cs]
+dotnet_diagnostic.I18N007.severity = none
+dotnet_diagnostic.I18N008.severity = error
+```
+
 ## Packaging and Integration Testing
 
 The NuGet package is built as an analyzer package:
