@@ -807,6 +807,15 @@ internal static class TranslationFileParser
         optionsProvider.GlobalOptions.TryGetValue("build_property.GeneratedNamespace", out var generatedNamespace);
         optionsProvider.GlobalOptions.TryGetValue("build_property.I18NLanguageAliases", out var languageAliases);
 
+        if (string.IsNullOrWhiteSpace(generatedNamespace)
+            && optionsProvider.GlobalOptions.TryGetValue("build_property.RootNamespace", out var rootNamespace)
+            && !string.IsNullOrWhiteSpace(rootNamespace))
+        {
+            // The SDK default RootNamespace is the project name with only spaces replaced, so a project
+            // named "My-App" gets "My-App". Make each segment a valid identifier.
+            generatedNamespace = string.Join(".", rootNamespace.Trim().Split('.').Select(static part => TranslationGeneratorUtilities.SanitizeName(part.Trim())));
+        }
+
         return new TranslationGeneratorOptions(
             fallbackLanguage ?? string.Empty,
             generatedNamespace ?? string.Empty,

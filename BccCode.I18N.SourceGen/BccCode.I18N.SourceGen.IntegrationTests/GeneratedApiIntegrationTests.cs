@@ -8,6 +8,15 @@ namespace BccCode.I18N.SourceGen.IntegrationTests;
 public class GeneratedApiIntegrationTests
 {
     [Fact]
+    public void Generated_types_default_to_the_projects_RootNamespace()
+    {
+        // The project files set RootNamespace but not GeneratedNamespace.
+        Assert.Equal("BccCode.I18N.SourceGen.IntegrationTests", typeof(Language).Namespace);
+        Assert.Equal("BccCode.I18N.SourceGen.IntegrationTests", typeof(LanguageStrings).Namespace);
+        Assert.Equal("BccCode.I18N.SourceGen.IntegrationTests", typeof(LanguageKeys).Namespace);
+    }
+
+    [Fact]
     public void Generated_api_is_available_when_consumed_as_an_analyzer_project_reference()
     {
         CultureInfo.CurrentUICulture = new CultureInfo("en");

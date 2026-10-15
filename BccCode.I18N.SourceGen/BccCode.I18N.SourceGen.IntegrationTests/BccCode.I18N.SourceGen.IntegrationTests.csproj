@@ -8,7 +8,6 @@
         <IsPackable>false</IsPackable>
         <RootNamespace>BccCode.I18N.SourceGen.IntegrationTests</RootNamespace>
         <FallbackLanguage>en</FallbackLanguage>
-        <GeneratedNamespace>BccCode.I18N.SourceGen.IntegrationTests</GeneratedNamespace>
         <!-- message.fallbackOnly exists only in the fallback language on purpose, to test per-key fallback. -->
         <NoWarn>$(NoWarn);I18N007</NoWarn>
     </PropertyGroup>

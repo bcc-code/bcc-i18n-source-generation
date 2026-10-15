@@ -1,23 +1,25 @@
 # Reference: MSBuild properties and item metadata
 
-The generator reads three MSBuild properties and one item metadata value. The NuGet package's `build/BccCode.I18N.SourceGen.props` (also shipped as `buildTransitive/`) makes them visible to the compiler with `CompilerVisibleProperty` and `CompilerVisibleItemMetadata`.
+The generator reads four MSBuild properties and one item metadata value. The NuGet package's `build/BccCode.I18N.SourceGen.props` (also shipped as `buildTransitive/`) makes them visible to the compiler with `CompilerVisibleProperty` and `CompilerVisibleItemMetadata`.
 
 ## Properties
 
 | Property | Default | Description |
 | --- | --- | --- |
 | `FallbackLanguage` | `no` (set by the props file). `en` if the props file is not imported. | The language used when no translation file matches a culture, and for keys that a language does not contain. Must equal the name of one translation file without `.json`. Compared case-insensitively; leading and trailing whitespace is ignored. |
-| `GeneratedNamespace` | See below. | Namespace of all generated types. Empty means the global namespace. |
+| `GeneratedNamespace` | `$(RootNamespace)`. See below. | Namespace of all generated types. |
 | `I18NLanguageAliases` | Empty | Extra language aliases as `culture=language` pairs separated by `;`, for example `nb=no;nn=no;pt-pt=pt`. |
+| `RootNamespace` | Set by the .NET SDK. | Standard MSBuild property. Used as the namespace when `GeneratedNamespace` is empty. |
 
 ### `GeneratedNamespace` default
 
-The props file sets `GeneratedNamespace` to `$(RootNamespace)` when it is empty. MSBuild evaluates that value at the point where the props file is imported:
+When `GeneratedNamespace` is empty or whitespace, the generator uses `RootNamespace`. The generator reads both values at compile time, so it sees the final values from the project file, wherever the props file is imported.
 
-- With a `PackageReference`, NuGet imports the props file before the project file body, where `RootNamespace` is usually not set yet. The generated types then end up in the global namespace.
-- With a `ProjectReference` and an `<Import>` at the top of the project file, `RootNamespace` has the SDK default (the project name) at that point. A `RootNamespace` set later in the project file is not used.
+- `RootNamespace` is the project name unless the project file sets it. The SDK only replaces spaces in the project name, so the generator replaces every character that is not valid in a C# identifier with `_`, adds a leading `_` to a segment that starts with a digit or another character that cannot start an identifier, and escapes a segment that is a C# keyword with `@`. A project named `My-App` gets `My_App`.
+- `GeneratedNamespace` is used as written.
+- If both are empty, the types are in the global namespace.
 
-Set `GeneratedNamespace` explicitly to get a predictable namespace.
+Versions up to 1.1.0 computed the default in the props file instead. NuGet imports that file before the project file body, so with a `PackageReference` the types were in the global namespace.
 
 ### `I18NLanguageAliases` format
 

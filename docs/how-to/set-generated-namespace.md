@@ -18,12 +18,9 @@ string text = Language.menu.save;
 
 ## If you do not set it
 
-The props file tries to default `GeneratedNamespace` to `$(RootNamespace)`, but it is evaluated before your project file sets `RootNamespace`. In practice:
+The types are in the project's `RootNamespace`. That is the project name unless the project file sets `RootNamespace`. Characters that are not valid in a C# namespace are replaced with `_`, so a project named `My-App` gets `My_App`. See [MSBuild reference](../reference/msbuild.md#generatednamespace-default) for the details.
 
-- With the NuGet package, the types are in the global namespace.
-- With a `ProjectReference` and the props imported at the top of the project file, the types are in a namespace named after the project.
-
-Setting `GeneratedNamespace` explicitly avoids both cases. See [MSBuild reference](../reference/msbuild.md#generatednamespace-default) for the details.
+Versions up to 1.1.0 did not use `RootNamespace` with the NuGet package and put the types in the global namespace. If you upgrade from such a version without setting `GeneratedNamespace`, add `using` directives for the new namespace.
 
 ## Several projects in one solution
 
