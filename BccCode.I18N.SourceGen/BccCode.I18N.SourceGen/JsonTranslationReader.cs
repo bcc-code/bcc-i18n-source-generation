@@ -41,23 +41,20 @@ internal sealed class JsonNode
     public static JsonNode Object(List<JsonProperty> properties) => new(JsonNodeKind.Object, null, properties);
 }
 
-/// <summary>A property of a JSON object. Line and column are zero-based and point at the opening quote of the name.</summary>
+/// <summary>A property of a JSON object. Offset is the zero-based index of the opening quote of the name in the parsed text.</summary>
 internal readonly struct JsonProperty
 {
-    public JsonProperty(string name, int line, int column, int length, JsonNode value)
+    public JsonProperty(string name, int offset, int length, JsonNode value)
     {
         Name = name;
-        Line = line;
-        Column = column;
+        Offset = offset;
         Length = length;
         Value = value;
     }
 
     public string Name { get; }
 
-    public int Line { get; }
-
-    public int Column { get; }
+    public int Offset { get; }
 
     /// <summary>Length of the quoted name as written in the source, escapes included.</summary>
     public int Length { get; }
@@ -65,22 +62,19 @@ internal readonly struct JsonProperty
     public JsonNode Value { get; }
 }
 
-/// <summary>A syntax error with a zero-based line and column.</summary>
+/// <summary>A syntax error at a zero-based character offset in the parsed text.</summary>
 internal sealed class JsonSyntaxException : Exception
 {
-    public JsonSyntaxException(string description, int line, int column)
+    public JsonSyntaxException(string description, int offset)
         : base(description)
     {
         Description = description;
-        Line = line;
-        Column = column;
+        Offset = offset;
     }
 
     public string Description { get; }
 
-    public int Line { get; }
-
-    public int Column { get; }
+    public int Offset { get; }
 }
 
 /// <summary>
@@ -95,8 +89,6 @@ internal sealed class JsonTranslationReader
 
     private readonly string _text;
     private int _pos;
-    private int _line;
-    private int _lineStart;
     private StringBuilder? _builder;
 
     private JsonTranslationReader(string text)
@@ -105,7 +97,6 @@ internal sealed class JsonTranslationReader
         if (text.Length > 0 && text[0] == '﻿')
         {
             _pos = 1;
-            _lineStart = 1;
         }
     }
 
@@ -130,8 +121,6 @@ internal sealed class JsonTranslationReader
     }
 
     private bool AtEnd => _pos >= _text.Length;
-
-    private int Column => _pos - _lineStart;
 
     private JsonNode ParseValue(int depth)
     {
@@ -191,8 +180,6 @@ internal sealed class JsonTranslationReader
                 throw Unexpected("a property name");
             }
 
-            var nameLine = _line;
-            var nameColumn = Column;
             var nameStart = _pos;
             var name = ReadString();
             var nameLength = _pos - nameStart;
@@ -205,7 +192,7 @@ internal sealed class JsonTranslationReader
 
             _pos++;
             var value = ParseValue(depth);
-            properties.Add(new JsonProperty(name, nameLine, nameColumn, nameLength, value));
+            properties.Add(new JsonProperty(name, nameStart, nameLength, value));
 
             SkipWhitespace();
             if (AtEnd)
@@ -289,8 +276,7 @@ internal sealed class JsonTranslationReader
 
     private string ReadString()
     {
-        var startLine = _line;
-        var startColumn = Column;
+        var startOffset = _pos;
         _pos++; // opening quote
         var segmentStart = _pos;
         StringBuilder? builder = null;
@@ -299,7 +285,7 @@ internal sealed class JsonTranslationReader
         {
             if (AtEnd)
             {
-                throw new JsonSyntaxException("the string is not terminated", startLine, startColumn);
+                throw new JsonSyntaxException("the string is not terminated", startOffset);
             }
 
             var c = _text[_pos];
@@ -504,41 +490,22 @@ internal sealed class JsonTranslationReader
 
     private static bool IsDigit(char c) => c >= '0' && c <= '9';
 
-    /// <summary>Skips space, tab, CR and LF, the only whitespace JSON allows. Raw line breaks cannot occur elsewhere.</summary>
+    /// <summary>Skips space, tab, CR and LF, the only whitespace JSON allows.</summary>
     private void SkipWhitespace()
     {
         while (_pos < _text.Length)
         {
             var c = _text[_pos];
-            if (c == ' ' || c == '\t')
-            {
-                _pos++;
-            }
-            else if (c == '\n')
-            {
-                _pos++;
-                _line++;
-                _lineStart = _pos;
-            }
-            else if (c == '\r')
-            {
-                _pos++;
-                if (_pos < _text.Length && _text[_pos] == '\n')
-                {
-                    _pos++;
-                }
-
-                _line++;
-                _lineStart = _pos;
-            }
-            else
+            if (c != ' ' && c != '\t' && c != '\n' && c != '\r')
             {
                 break;
             }
+
+            _pos++;
         }
     }
 
-    private JsonSyntaxException Error(string description) => new(description, _line, Column);
+    private JsonSyntaxException Error(string description) => new(description, _pos);
 
     private JsonSyntaxException Unexpected(string expected)
     {

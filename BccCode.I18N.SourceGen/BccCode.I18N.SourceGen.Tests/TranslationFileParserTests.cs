@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using Microsoft.CodeAnalysis.Text;
 using BccCode.I18N.SourceGen.Tests.Utils;
 using Xunit;
 
@@ -70,14 +71,21 @@ public class TranslationFileParserTests
   }
 
   [Fact]
-  public void Accepts_a_leading_byte_order_mark_and_keeps_columns_relative_to_the_text()
+  public void Accepts_a_leading_byte_order_mark_and_keeps_positions_aligned_with_the_source_text()
   {
     var result = Parse("\uFEFF{ \"a\": \"1\" }");
     Assert.Equal([("a", "1")], Entries(result));
 
     var broken = SingleDiagnostic(Parse("\uFEFF{ \"a\" 1 }"));
     Assert.Equal("I18N001", broken.Descriptor.Id);
-    Assert.Contains("(line 1, column 7)", broken.Message, StringComparison.Ordinal);
+    // SourceText.From(string) keeps the BOM char as part of line 1, so the '1' is at column 8.
+    Assert.Contains("(line 1, column 8)", broken.Message, StringComparison.Ordinal);
+    var location = broken.Location!.Value.ToLocation();
+    Assert.Equal(new TextSpan(7, 0), location.SourceSpan);
+    Assert.Equal(7, location.GetLineSpan().StartLinePosition.Character);
+
+    var unsupported = SingleDiagnostic(Parse("\uFEFF{ \"a\": 1 }"));
+    Assert.Equal(new TextSpan(3, 3), unsupported.Location!.Value.ToLocation().SourceSpan);
   }
 
   [Fact]
@@ -186,6 +194,42 @@ public class TranslationFileParserTests
     var span = diagnostic.Location!.Value.LineSpan!.Value;
     Assert.Equal(line - 1, span.Start.Line);
     Assert.Equal(column - 1, span.Start.Character);
+
+    var expectedOffset = SourceText.From(json).Lines.GetPosition(new LinePosition(line - 1, column - 1));
+    var location = diagnostic.Location!.Value.ToLocation();
+    Assert.Equal(new TextSpan(expectedOffset, 0), location.SourceSpan);
+    Assert.Equal(span, location.GetLineSpan().Span);
+  }
+
+  // U+0085, U+2028 and U+2029 are legal inside JSON strings, but Roslyn's SourceText treats them as line breaks.
+  [Theory]
+  [InlineData("\u0085")]
+  [InlineData("\u2028")]
+  [InlineData("\u2029")]
+  public void Positions_follow_SourceText_line_breaks_for_separators_in_strings_and_names(string separator)
+  {
+    var prefix = "{\n \"a" + separator + "b\": \"x" + separator + "y\",\n ";
+
+    var unsupported = SingleDiagnostic(Parse(prefix + "\"n\": 1\n}"));
+    Assert.Equal("I18N003", unsupported.Descriptor.Id);
+    var location = unsupported.Location!.Value.ToLocation();
+    Assert.Equal(new TextSpan(prefix.Length, 3), location.SourceSpan);
+    Assert.Equal(new LinePosition(4, 1), location.GetLineSpan().StartLinePosition);
+    Assert.Equal(new LinePosition(4, 4), location.GetLineSpan().EndLinePosition);
+
+    var syntaxError = SingleDiagnostic(Parse(prefix + "\"n\" 1\n}"));
+    Assert.Equal("I18N001", syntaxError.Descriptor.Id);
+    Assert.EndsWith("(line 5, column 6)", syntaxError.Message, StringComparison.Ordinal);
+    location = syntaxError.Location!.Value.ToLocation();
+    Assert.Equal(new TextSpan(prefix.Length + 4, 0), location.SourceSpan);
+    Assert.Equal(new LinePosition(4, 5), location.GetLineSpan().StartLinePosition);
+
+    // The separator inside a key that is itself reported.
+    var inName = SingleDiagnostic(Parse("{ \"k" + separator + "k\": 1 }"));
+    location = inName.Location!.Value.ToLocation();
+    Assert.Equal(new TextSpan(2, 5), location.SourceSpan);
+    Assert.Equal(new LinePosition(0, 2), location.GetLineSpan().StartLinePosition);
+    Assert.Equal(new LinePosition(1, 2), location.GetLineSpan().EndLinePosition);
   }
 
   [Fact]

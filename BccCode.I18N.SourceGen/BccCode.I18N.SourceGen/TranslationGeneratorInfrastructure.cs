@@ -149,16 +149,25 @@ internal readonly struct LocationInfo : IEquatable<LocationInfo>
     public LocationInfo(string filePath)
     {
         FilePath = filePath ?? string.Empty;
+        TextSpan = null;
         LineSpan = null;
     }
 
-    public LocationInfo(string filePath, LinePositionSpan lineSpan)
+    public LocationInfo(string filePath, TextSpan textSpan, LinePositionSpan lineSpan)
     {
         FilePath = filePath ?? string.Empty;
+        TextSpan = textSpan;
         LineSpan = lineSpan;
     }
 
+    /// <summary>Creates a location for a span of <paramref name="text"/>; the line span is derived from the text.</summary>
+    public static LocationInfo FromSpan(string filePath, SourceText text, TextSpan span) =>
+        new(filePath, span, text.Lines.GetLinePositionSpan(span));
+
     public string FilePath { get; }
+
+    /// <summary>Character span inside the file, or null for a file-level location.</summary>
+    public TextSpan? TextSpan { get; }
 
     /// <summary>Zero-based line span inside the file, or null for a file-level location (line 0).</summary>
     public LinePositionSpan? LineSpan { get; }
@@ -170,11 +179,12 @@ internal readonly struct LocationInfo : IEquatable<LocationInfo>
             return Location.None;
         }
 
-        return Location.Create(FilePath, new TextSpan(0, 0), LineSpan ?? default);
+        return Location.Create(FilePath, TextSpan ?? default, LineSpan ?? default);
     }
 
     public bool Equals(LocationInfo other) =>
         string.Equals(FilePath, other.FilePath, StringComparison.Ordinal) &&
+        Nullable.Equals(TextSpan, other.TextSpan) &&
         Nullable.Equals(LineSpan, other.LineSpan);
 
     public override bool Equals(object? obj) => obj is LocationInfo other && Equals(other);
@@ -183,7 +193,9 @@ internal readonly struct LocationInfo : IEquatable<LocationInfo>
     {
         unchecked
         {
-            return ((FilePath != null ? StringComparer.Ordinal.GetHashCode(FilePath) : 0) * 397) ^ (LineSpan?.GetHashCode() ?? 0);
+            var hashCode = FilePath != null ? StringComparer.Ordinal.GetHashCode(FilePath) : 0;
+            hashCode = (hashCode * 397) ^ (TextSpan?.GetHashCode() ?? 0);
+            return (hashCode * 397) ^ (LineSpan?.GetHashCode() ?? 0);
         }
     }
 }
@@ -536,20 +548,23 @@ internal static class TranslationFileParser
                     new LocationInfo(filePath)))));
         }
 
+        // Offsets from the reader index into this string, which is the SourceText's own text
+        // (a leading BOM char, if present, stays in it), so they map 1:1 to SourceText positions.
+        var text = sourceText.ToString();
         JsonNode root;
         try
         {
-            root = JsonTranslationReader.Parse(sourceText.ToString());
+            root = JsonTranslationReader.Parse(text);
         }
         catch (JsonSyntaxException exception)
         {
+            var errorSpan = new TextSpan(exception.Offset, 0);
+            var errorPosition = sourceText.Lines.GetLinePosition(exception.Offset);
             return LanguageFileParseResult.Failure(new EquatableArray<GeneratorDiagnosticInfo>(
                 ImmutableArray.Create(new GeneratorDiagnosticInfo(
                     TranslationGeneratorDiagnostics.InvalidJson,
-                    $"Invalid JSON in translation file '{filePath}': {exception.Description} (line {exception.Line + 1}, column {exception.Column + 1})",
-                    new LocationInfo(filePath, new LinePositionSpan(
-                        new LinePosition(exception.Line, exception.Column),
-                        new LinePosition(exception.Line, exception.Column)))))));
+                    $"Invalid JSON in translation file '{filePath}': {exception.Description} (line {errorPosition.Line + 1}, column {errorPosition.Character + 1})",
+                    LocationInfo.FromSpan(filePath, sourceText, errorSpan)))));
         }
 
         if (root.Kind != JsonNodeKind.Object)
@@ -563,7 +578,7 @@ internal static class TranslationFileParser
 
         var entries = ImmutableArray.CreateBuilder<TranslationEntryModel>();
         var diagnostics = ImmutableArray.CreateBuilder<GeneratorDiagnosticInfo>();
-        Flatten(root, string.Empty, filePath, entries, diagnostics);
+        Flatten(root, string.Empty, filePath, sourceText, entries, diagnostics);
 
         var normalizedEntries = entries
             .OrderBy(static entry => entry.KeyPath, StringComparer.Ordinal)
@@ -588,6 +603,7 @@ internal static class TranslationFileParser
         JsonNode node,
         string outerPath,
         string filePath,
+        SourceText sourceText,
         ImmutableArray<TranslationEntryModel>.Builder entries,
         ImmutableArray<GeneratorDiagnosticInfo>.Builder diagnostics)
     {
@@ -601,16 +617,14 @@ internal static class TranslationFileParser
                     break;
 
                 case JsonNodeKind.Object:
-                    Flatten(property.Value, keyPath, filePath, entries, diagnostics);
+                    Flatten(property.Value, keyPath, filePath, sourceText, entries, diagnostics);
                     break;
 
                 default:
                     diagnostics.Add(new GeneratorDiagnosticInfo(
                         TranslationGeneratorDiagnostics.UnsupportedValue,
                         $"Translation key '{keyPath}' in '{filePath}' must contain a string value or nested object.",
-                        new LocationInfo(filePath, new LinePositionSpan(
-                            new LinePosition(property.Line, property.Column),
-                            new LinePosition(property.Line, property.Column + property.Length)))));
+                        LocationInfo.FromSpan(filePath, sourceText, new TextSpan(property.Offset, property.Length))));
                     break;
             }
         }
