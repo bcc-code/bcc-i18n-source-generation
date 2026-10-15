@@ -87,6 +87,8 @@ string? maybe = LanguageStrings.GetStringOrNull("message.hello", new CultureInfo
 
 `LocalizedLanguage` is a readonly struct in the generated namespace. Its members have the same names, parameters and return types as in `Language`. It resolves the language once in the constructor with `LanguageStrings.ResolveLanguage(culture)`. Groups are returned as small structs in the generated `LocalizedLanguageGroups` class (hidden from completion; the type names are derived from the key path and given a numeric suffix on a collision, so they never clash with your keys). `default(LocalizedLanguage)` uses the fallback language and invariant formatting.
 
+A struct member cannot have the name of its struct. When a root key is named `LocalizedLanguage`, the instance member in `LocalizedLanguage` gets a `_` suffix (`LocalizedLanguage_`, and a number if that name is taken too). `Language` is not affected. The same rule applies to a group member that has the name of its group struct.
+
 Which culture is used for what:
 
 | API | Language selection | Number/date formatting |

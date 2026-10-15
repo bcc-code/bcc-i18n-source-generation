@@ -907,7 +907,11 @@ internal static class TranslationGeneratorUtilities
         .Select(static part => part.Trim())
         .ToArray();
 
-    public static bool TryCreateFormatExpression(string value, string[] parameterNames, out string expression)
+    public static bool TryCreateFormatExpression(
+        string value,
+        string[] parameterNames,
+        out string expression,
+        string providerParameter = FormatProviderParameter)
     {
         value ??= string.Empty;
 
@@ -945,7 +949,7 @@ internal static class TranslationGeneratorUtilities
             return true;
         }
 
-        var expressionBuilder = new StringBuilder("string.Format(" + FormatProviderParameter + ", ", literal.Length + 96);
+        var expressionBuilder = new StringBuilder("string.Format(" + providerParameter + ", ", literal.Length + 96);
         expressionBuilder.Append(literal);
         foreach (var identifier in GetParameterIdentifiers(parameterNames))
         {
