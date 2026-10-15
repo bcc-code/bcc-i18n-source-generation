@@ -1,7 +1,8 @@
 {
     "message": {
         "hello1": "hello world",
-        "hello2": "{msg} world"
+        "hello2": "{msg} world",
+        "fallbackOnly": "only in the fallback language"
     },
     "plural": {
         "car": "car | cars",

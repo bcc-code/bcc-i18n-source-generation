@@ -18,10 +18,11 @@ internal static class GeneratorTestHelpers
         IIncrementalGenerator generator,
         IEnumerable<TestAdditionalFile> additionalFiles,
         string? fallbackLanguage = null,
-        bool trackIncrementalSteps = false)
+        bool trackIncrementalSteps = false,
+        string? languageAliases = null)
     {
         var compilation = CreateCompilation();
-        var driver = CreateDriver(generator, additionalFiles, fallbackLanguage, trackIncrementalSteps);
+        var driver = CreateDriver(generator, additionalFiles, fallbackLanguage, trackIncrementalSteps, languageAliases);
         driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
         return (driver, driver.GetRunResult(), outputCompilation);
     }
@@ -62,7 +63,8 @@ internal static class GeneratorTestHelpers
         IIncrementalGenerator generator,
         IEnumerable<TestAdditionalFile> additionalFiles,
         string? fallbackLanguage,
-        bool trackIncrementalSteps)
+        bool trackIncrementalSteps,
+        string? languageAliases = null)
     {
         var sourceGenerator = generator.AsSourceGenerator();
         var driverOptions = new GeneratorDriverOptions(
@@ -73,7 +75,7 @@ internal static class GeneratorTestHelpers
             generators: ImmutableArray.Create(sourceGenerator),
             additionalTexts: additionalFiles.ToImmutableArray<AdditionalText>(),
             parseOptions: CSharpParseOptions.Default,
-            optionsProvider: new TestAnalyzerConfigOptionsProvider(fallbackLanguage),
+            optionsProvider: new TestAnalyzerConfigOptionsProvider(fallbackLanguage, languageAliases),
             driverOptions: driverOptions);
     }
 
@@ -95,12 +97,17 @@ internal static class GeneratorTestHelpers
         private readonly TestAnalyzerConfigOptions _globalOptions;
         private readonly Dictionary<string, string> _globalValues;
 
-        public TestAnalyzerConfigOptionsProvider(string? fallbackLanguage)
+        public TestAnalyzerConfigOptionsProvider(string? fallbackLanguage, string? languageAliases)
         {
             var options = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             if (!string.IsNullOrWhiteSpace(fallbackLanguage))
             {
                 options["build_property.FallbackLanguage"] = fallbackLanguage;
+            }
+
+            if (languageAliases is not null)
+            {
+                options["build_property.I18NLanguageAliases"] = languageAliases;
             }
 
             options["build_property.GeneratedNamespace"] = "BccCode.I18N.Tests.Generated";
