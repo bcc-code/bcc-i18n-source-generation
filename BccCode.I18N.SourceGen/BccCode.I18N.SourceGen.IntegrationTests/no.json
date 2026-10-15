@@ -1,7 +1,10 @@
 {
     "message": {
         "hello1": "hei verden",
-        "hello2": "{msg} verden"
+        "saveLabel": "Lagre",
+        "press": "Trykk @:message.saveLabel.",
+        "hello2": "{msg} verden",
+        "price": "Pris: {amount:N2}"
     },
     "plural": {
         "car": "bil | biler",

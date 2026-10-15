@@ -18,10 +18,13 @@ internal static class GeneratorTestHelpers
         IIncrementalGenerator generator,
         IEnumerable<TestAdditionalFile> additionalFiles,
         string? fallbackLanguage = null,
-        bool trackIncrementalSteps = false)
+        bool trackIncrementalSteps = false,
+        string? languageAliases = null,
+        bool referenceLocalization = false,
+        IEnumerable<string>? extraSources = null)
     {
-        var compilation = CreateCompilation();
-        var driver = CreateDriver(generator, additionalFiles, fallbackLanguage, trackIncrementalSteps);
+        var compilation = CreateCompilation(referenceLocalization, extraSources);
+        var driver = CreateDriver(generator, additionalFiles, fallbackLanguage, trackIncrementalSteps, languageAliases);
         driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
         return (driver, driver.GetRunResult(), outputCompilation);
     }
@@ -62,7 +65,8 @@ internal static class GeneratorTestHelpers
         IIncrementalGenerator generator,
         IEnumerable<TestAdditionalFile> additionalFiles,
         string? fallbackLanguage,
-        bool trackIncrementalSteps)
+        bool trackIncrementalSteps,
+        string? languageAliases = null)
     {
         var sourceGenerator = generator.AsSourceGenerator();
         var driverOptions = new GeneratorDriverOptions(
@@ -73,19 +77,33 @@ internal static class GeneratorTestHelpers
             generators: ImmutableArray.Create(sourceGenerator),
             additionalTexts: additionalFiles.ToImmutableArray<AdditionalText>(),
             parseOptions: CSharpParseOptions.Default,
-            optionsProvider: new TestAnalyzerConfigOptionsProvider(fallbackLanguage),
+            optionsProvider: new TestAnalyzerConfigOptionsProvider(fallbackLanguage, languageAliases),
             driverOptions: driverOptions);
     }
 
-    public static CSharpCompilation CreateCompilation()
+    /// <summary>
+    /// Compilation for the generator tests. Microsoft.Extensions.Localization.Abstractions is never referenced
+    /// implicitly (the test assembly itself references it), only when <paramref name="referenceLocalization"/> is set.
+    /// </summary>
+    public static CSharpCompilation CreateCompilation(bool referenceLocalization = false, IEnumerable<string>? extraSources = null)
     {
         var references = AppDomain.CurrentDomain.GetAssemblies()
             .Where(static assembly => !assembly.IsDynamic && !string.IsNullOrWhiteSpace(assembly.Location))
-            .Select(static assembly => MetadataReference.CreateFromFile(assembly.Location));
+            .Where(static assembly => assembly.GetName().Name?.StartsWith("Microsoft.Extensions.Localization", StringComparison.Ordinal) != true)
+            .Select(static assembly => (MetadataReference)MetadataReference.CreateFromFile(assembly.Location))
+            .ToList();
+
+        if (referenceLocalization)
+        {
+            references.Add(MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.Localization.IStringLocalizer).Assembly.Location));
+        }
+
+        var syntaxTrees = new List<SyntaxTree> { CSharpSyntaxTree.ParseText(PlaceholderSource) };
+        syntaxTrees.AddRange((extraSources ?? Enumerable.Empty<string>()).Select(static source => CSharpSyntaxTree.ParseText(source)));
 
         return CSharpCompilation.Create(
             assemblyName: "GeneratorTests",
-            syntaxTrees: new[] { CSharpSyntaxTree.ParseText(PlaceholderSource) },
+            syntaxTrees: syntaxTrees,
             references: references,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
     }
@@ -95,12 +113,17 @@ internal static class GeneratorTestHelpers
         private readonly TestAnalyzerConfigOptions _globalOptions;
         private readonly Dictionary<string, string> _globalValues;
 
-        public TestAnalyzerConfigOptionsProvider(string? fallbackLanguage)
+        public TestAnalyzerConfigOptionsProvider(string? fallbackLanguage, string? languageAliases)
         {
             var options = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             if (!string.IsNullOrWhiteSpace(fallbackLanguage))
             {
                 options["build_property.FallbackLanguage"] = fallbackLanguage;
+            }
+
+            if (languageAliases is not null)
+            {
+                options["build_property.I18NLanguageAliases"] = languageAliases;
             }
 
             options["build_property.GeneratedNamespace"] = "BccCode.I18N.Tests.Generated";

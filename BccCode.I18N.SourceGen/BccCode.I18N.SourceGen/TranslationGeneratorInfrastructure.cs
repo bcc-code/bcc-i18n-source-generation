@@ -21,8 +21,9 @@ internal static class TranslationGeneratorDefaults
 
 internal readonly struct TranslationGeneratorOptions : IEquatable<TranslationGeneratorOptions>
 {
-    public TranslationGeneratorOptions(string fallbackLanguage, string generatedNamespace)
+    public TranslationGeneratorOptions(string fallbackLanguage, string generatedNamespace, string languageAliases = "")
     {
+        LanguageAliases = languageAliases?.Trim() ?? string.Empty;
         FallbackLanguage = string.IsNullOrWhiteSpace(fallbackLanguage)
             ? TranslationGeneratorDefaults.DefaultFallbackLanguage
             : fallbackLanguage.Trim().ToLowerInvariant();
@@ -33,11 +34,15 @@ internal readonly struct TranslationGeneratorOptions : IEquatable<TranslationGen
 
     public string GeneratedNamespace { get; }
 
+    /// <summary>The raw value of the I18NLanguageAliases property, e.g. "nb=no;nn=no".</summary>
+    public string LanguageAliases { get; }
+
     public bool HasGeneratedNamespace => !string.IsNullOrWhiteSpace(GeneratedNamespace);
 
     public bool Equals(TranslationGeneratorOptions other) =>
         string.Equals(FallbackLanguage, other.FallbackLanguage, StringComparison.Ordinal) &&
-        string.Equals(GeneratedNamespace, other.GeneratedNamespace, StringComparison.Ordinal);
+        string.Equals(GeneratedNamespace, other.GeneratedNamespace, StringComparison.Ordinal) &&
+        string.Equals(LanguageAliases, other.LanguageAliases, StringComparison.Ordinal);
 
     public override bool Equals(object? obj) => obj is TranslationGeneratorOptions other && Equals(other);
 
@@ -47,6 +52,7 @@ internal readonly struct TranslationGeneratorOptions : IEquatable<TranslationGen
         {
             var hashCode = FallbackLanguage != null ? StringComparer.Ordinal.GetHashCode(FallbackLanguage) : 0;
             hashCode = (hashCode * 397) ^ (GeneratedNamespace != null ? StringComparer.Ordinal.GetHashCode(GeneratedNamespace) : 0);
+            hashCode = (hashCode * 397) ^ (LanguageAliases != null ? StringComparer.Ordinal.GetHashCode(LanguageAliases) : 0);
             return hashCode;
         }
     }
@@ -61,6 +67,8 @@ internal static class TranslationGeneratorTrackingNames
     public const string TranslationModelSet = nameof(TranslationModelSet);
     public const string ModelSetDiagnostics = nameof(ModelSetDiagnostics);
     public const string LanguageKeysModel = nameof(LanguageKeysModel);
+    public const string StringLocalizerSupport = nameof(StringLocalizerSupport);
+    public const string GeneratedNamespace = nameof(GeneratedNamespace);
 }
 
 internal static class TranslationGeneratorDiagnostics
@@ -114,6 +122,107 @@ internal static class TranslationGeneratorDiagnostics
         category: Category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor MissingKey = new(
+        id: "I18N007",
+        title: "Translation key missing from language",
+        messageFormat: "{0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ExtraKey = new(
+        id: "I18N008",
+        title: "Translation key not in fallback language",
+        messageFormat: "{0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor InvalidLinkedMessage = new(
+        id: "I18N010",
+        title: "Invalid linked message",
+        messageFormat: "{0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor LanguageAliasTargetMissing = new(
+        id: "I18N009",
+        title: "Language alias target missing",
+        messageFormat: "{0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+}
+
+internal readonly struct LanguageAliasModel : IEquatable<LanguageAliasModel>
+{
+    public LanguageAliasModel(string source, string target)
+    {
+        Source = source;
+        Target = target;
+    }
+
+    public string Source { get; }
+
+    public string Target { get; }
+
+    public bool Equals(LanguageAliasModel other) =>
+        string.Equals(Source, other.Source, StringComparison.Ordinal) &&
+        string.Equals(Target, other.Target, StringComparison.Ordinal);
+
+    public override bool Equals(object? obj) => obj is LanguageAliasModel other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        unchecked
+        {
+            return ((Source != null ? StringComparer.Ordinal.GetHashCode(Source) : 0) * 397) ^
+                   (Target != null ? StringComparer.Ordinal.GetHashCode(Target) : 0);
+        }
+    }
+}
+
+internal static class LanguageAliasParser
+{
+    /// <summary>Aliases that apply when the project does not override them. Ignored silently when the target has no file.</summary>
+    public static readonly (string Source, string Target)[] Defaults =
+    {
+        ("nb", "no"),
+        ("nn", "no"),
+        ("no", "nb"),
+    };
+
+    /// <summary>
+    /// Parses "nb=no;nn=no". Names are trimmed and lowercased, empty entries are ignored and the last
+    /// entry for a name wins. Entries without '=' (or with an empty side) are returned as malformed.
+    /// </summary>
+    public static Dictionary<string, string> Parse(string value, List<string> malformedEntries)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var rawEntry in (value ?? string.Empty).Split(';'))
+        {
+            var entry = rawEntry.Trim();
+            if (entry.Length == 0)
+            {
+                continue;
+            }
+
+            var separator = entry.IndexOf('=');
+            var source = separator < 0 ? string.Empty : entry.Substring(0, separator).Trim().ToLowerInvariant();
+            var target = separator < 0 ? string.Empty : entry.Substring(separator + 1).Trim().ToLowerInvariant();
+            if (source.Length == 0 || target.Length == 0)
+            {
+                malformedEntries.Add(entry);
+                continue;
+            }
+
+            result[source] = target;
+        }
+
+        return result;
+    }
 }
 
 internal readonly struct TranslationEntryModel : IEquatable<TranslationEntryModel>
@@ -404,8 +513,10 @@ internal readonly struct TranslationModelSet : IEquatable<TranslationModelSet>
         EquatableArray<LanguageFileModel> files,
         EquatableArray<GeneratorDiagnosticInfo> diagnostics,
         bool hasFallbackFile,
-        LanguageFileModel fallbackFile)
+        LanguageFileModel fallbackFile,
+        EquatableArray<LanguageAliasModel> aliases)
     {
+        Aliases = aliases;
         Options = options;
         Files = files;
         Diagnostics = diagnostics;
@@ -429,7 +540,11 @@ internal readonly struct TranslationModelSet : IEquatable<TranslationModelSet>
 
     public LanguageFileModel FallbackFile { get; }
 
+    /// <summary>Effective aliases: the target has a file and the alias name has no file of its own.</summary>
+    public EquatableArray<LanguageAliasModel> Aliases { get; }
+
     public bool Equals(TranslationModelSet other) =>
+        Aliases.Equals(other.Aliases) &&
         Options.Equals(other.Options) &&
         Files.Equals(other.Files) &&
         Diagnostics.Equals(other.Diagnostics) &&
@@ -443,6 +558,7 @@ internal readonly struct TranslationModelSet : IEquatable<TranslationModelSet>
         unchecked
         {
             var hashCode = Options.GetHashCode();
+            hashCode = (hashCode * 397) ^ Aliases.GetHashCode();
             hashCode = (hashCode * 397) ^ Files.GetHashCode();
             hashCode = (hashCode * 397) ^ Diagnostics.GetHashCode();
             hashCode = (hashCode * 397) ^ HasFallbackFile.GetHashCode();
@@ -492,6 +608,9 @@ internal static class TranslationModelSetFactory
             .OrderBy(static file => file.Language, StringComparer.Ordinal)
             .ToImmutableArray();
 
+        // Linked messages are resolved here so that Language, LocalizedLanguage and LanguageStrings all see the final text.
+        uniqueFiles = TranslationLinkResolver.Resolve(uniqueFiles, normalizedFallbackLanguage, diagnosticBuilder);
+
         var hasFallbackFile = false;
         LanguageFileModel fallbackFile = default;
 
@@ -514,12 +633,105 @@ internal static class TranslationModelSetFactory
                 $"Fallback language '{normalizedFallbackLanguage}' was not found among the AdditionalFiles JSON translations."));
         }
 
+        var aliases = ResolveAliases(options.LanguageAliases, uniqueFiles, diagnosticBuilder);
+
+        if (hasFallbackFile)
+        {
+            AddKeyMismatchDiagnostics(diagnosticBuilder, uniqueFiles, fallbackFile, normalizedFallbackLanguage);
+        }
+
         return new TranslationModelSet(
-            new TranslationGeneratorOptions(normalizedFallbackLanguage, options.GeneratedNamespace),
+            new TranslationGeneratorOptions(normalizedFallbackLanguage, options.GeneratedNamespace, options.LanguageAliases),
             new EquatableArray<LanguageFileModel>(uniqueFiles),
             new EquatableArray<GeneratorDiagnosticInfo>(diagnosticBuilder.ToImmutable()),
             hasFallbackFile,
-            fallbackFile);
+            fallbackFile,
+            aliases);
+    }
+
+    private static EquatableArray<LanguageAliasModel> ResolveAliases(
+        string userAliases,
+        ImmutableArray<LanguageFileModel> files,
+        ImmutableArray<GeneratorDiagnosticInfo>.Builder diagnostics)
+    {
+        var languages = new HashSet<string>(files.Select(static file => file.Language), StringComparer.OrdinalIgnoreCase);
+
+        var malformedEntries = new List<string>();
+        var user = LanguageAliasParser.Parse(userAliases, malformedEntries);
+        foreach (var entry in malformedEntries)
+        {
+            diagnostics.Add(new GeneratorDiagnosticInfo(
+                TranslationGeneratorDiagnostics.LanguageAliasTargetMissing,
+                $"Language alias '{entry}' in I18NLanguageAliases is malformed. Use the format 'source=target', e.g. 'nb=no;nn=no'."));
+        }
+
+        var effective = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (source, target) in LanguageAliasParser.Defaults)
+        {
+            effective[source] = target;
+        }
+
+        foreach (var pair in user)
+        {
+            effective[pair.Key] = pair.Value;
+            if (!languages.Contains(pair.Value))
+            {
+                diagnostics.Add(new GeneratorDiagnosticInfo(
+                    TranslationGeneratorDiagnostics.LanguageAliasTargetMissing,
+                    $"Language alias '{pair.Key}={pair.Value}' in I18NLanguageAliases points to language '{pair.Value}', which has no translation file."));
+            }
+        }
+
+        return new EquatableArray<LanguageAliasModel>(effective
+            .Where(pair => languages.Contains(pair.Value) && !languages.Contains(pair.Key))
+            .OrderBy(static pair => pair.Key, StringComparer.Ordinal)
+            .Select(static pair => new LanguageAliasModel(pair.Key, pair.Value))
+            .ToImmutableArray());
+    }
+
+    private const int MaxListedKeys = 10;
+
+    private static void AddKeyMismatchDiagnostics(
+        ImmutableArray<GeneratorDiagnosticInfo>.Builder diagnostics,
+        ImmutableArray<LanguageFileModel> files,
+        LanguageFileModel fallbackFile,
+        string fallbackLanguage)
+    {
+        var fallbackKeys = new HashSet<string>(fallbackFile.Entries.Select(static entry => entry.KeyPath), StringComparer.Ordinal);
+
+        foreach (var file in files)
+        {
+            if (string.Equals(file.Language, fallbackLanguage, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var fileKeys = new HashSet<string>(file.Entries.Select(static entry => entry.KeyPath), StringComparer.Ordinal);
+            var missing = fallbackKeys.Where(key => !fileKeys.Contains(key)).OrderBy(static key => key, StringComparer.Ordinal).ToArray();
+            var extra = fileKeys.Where(key => !fallbackKeys.Contains(key)).OrderBy(static key => key, StringComparer.Ordinal).ToArray();
+
+            if (missing.Length > 0)
+            {
+                diagnostics.Add(new GeneratorDiagnosticInfo(
+                    TranslationGeneratorDiagnostics.MissingKey,
+                    $"Language '{file.Language}' is missing {missing.Length} key(s) present in fallback language '{fallbackLanguage}': {FormatKeys(missing)}",
+                    new LocationInfo(file.FilePath)));
+            }
+
+            if (extra.Length > 0)
+            {
+                diagnostics.Add(new GeneratorDiagnosticInfo(
+                    TranslationGeneratorDiagnostics.ExtraKey,
+                    $"Language '{file.Language}' has {extra.Length} key(s) not present in fallback language '{fallbackLanguage}', so they are not generated in Language or LanguageKeys: {FormatKeys(extra)}",
+                    new LocationInfo(file.FilePath)));
+            }
+        }
+    }
+
+    private static string FormatKeys(string[] keys)
+    {
+        var listed = string.Join(", ", keys.Take(MaxListedKeys));
+        return keys.Length > MaxListedKeys ? $"{listed}, and {keys.Length - MaxListedKeys} more" : listed;
     }
 
     private static string NormalizeLanguage(string language)
@@ -593,10 +805,12 @@ internal static class TranslationFileParser
     {
         optionsProvider.GlobalOptions.TryGetValue("build_property.FallbackLanguage", out var fallbackLanguage);
         optionsProvider.GlobalOptions.TryGetValue("build_property.GeneratedNamespace", out var generatedNamespace);
+        optionsProvider.GlobalOptions.TryGetValue("build_property.I18NLanguageAliases", out var languageAliases);
 
         return new TranslationGeneratorOptions(
             fallbackLanguage ?? string.Empty,
-            generatedNamespace ?? string.Empty);
+            generatedNamespace ?? string.Empty,
+            languageAliases ?? string.Empty);
     }
 
     private static void Flatten(
@@ -656,7 +870,11 @@ internal static class TranslationGeneratorUtilities
 {
     public const string DefaultCountParameter = "count";
 
-    private static readonly Regex PlaceholderRegex = new(@"\{(\s*\w+\s*)\}", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    /// <summary>Name of the parameter that carries the format provider in the generated translation methods.</summary>
+    public const string FormatProviderParameter = "__provider";
+
+    /// <summary>Name of the parameter that carries the resolved language in the generated translation methods.</summary>
+    public const string LanguageParameter = "__language";
 
     public const string TranslationMetadataKey = "build_metadata.AdditionalFiles.I18NTranslation";
 
@@ -746,19 +964,38 @@ internal static class TranslationGeneratorUtilities
         return builder.ToString();
     }
 
+    /// <summary>
+    /// The parameters of a key, in order: the placeholder names of the fallback text. A key is plural when any
+    /// language uses pipe-separated variants. When the fallback is not plural, the count parameter is named
+    /// "count" and comes first. This is the single source of the parameter order for the Language members
+    /// and for <c>LanguageStrings.Format</c>.
+    /// </summary>
+    public static string[] GetKeyParameters(string fallbackValue, IEnumerable<string> allValues, out bool isPlural)
+    {
+        var fallbackIsPlural = IsPluralValue(fallbackValue);
+        isPlural = fallbackIsPlural || allValues.Any(IsPluralValue);
+        var parameters = GetParameterNames(fallbackValue, fallbackIsPlural);
+        if (isPlural && !fallbackIsPlural)
+        {
+            parameters = new[] { DefaultCountParameter }
+                .Concat(parameters.Where(static parameter => parameter != DefaultCountParameter))
+                .ToArray();
+        }
+
+        return parameters;
+    }
+
     public static string[] GetParameterNames(string value, bool isPlural)
     {
-        var matches = PlaceholderRegex.Matches(value ?? string.Empty);
         var parameters = new List<string>();
-        foreach (Match match in matches)
+        foreach (var token in TranslationMessageSyntax.Tokenize(value))
         {
-            var parameter = match.Groups[1].Value.Trim();
-            if (parameters.Contains(parameter, StringComparer.Ordinal))
+            if (token.Kind != MessageTokenKind.Placeholder || parameters.Contains(token.Text, StringComparer.Ordinal))
             {
                 continue;
             }
 
-            parameters.Add(parameter);
+            parameters.Add(token.Text);
         }
 
         if (isPlural && parameters.Count == 0)
@@ -792,46 +1029,65 @@ internal static class TranslationGeneratorUtilities
         return identifiers;
     }
 
-    public static bool IsPluralValue(string value) => (value ?? string.Empty).IndexOf('|') >= 0;
+    public static bool IsPluralValue(string value) => TranslationMessageSyntax.IsPlural(value);
 
-    public static string[] SplitPluralParts(string value) =>
-        (value ?? string.Empty)
-        .Split('|')
-        .Select(static part => part.Trim())
-        .ToArray();
+    public static string[] SplitPluralParts(string value) => TranslationMessageSyntax.SplitPlural(value);
 
-    public static bool TryCreateFormatExpression(string value, string[] parameterNames, out string expression)
+    public static bool TryCreateFormatExpression(
+        string value,
+        string[] parameterNames,
+        out string expression,
+        string providerParameter = FormatProviderParameter)
     {
         value ??= string.Empty;
 
+        // Literals ({'text'}) become plain text. Text is escaped for string.Format, unless the message
+        // has no placeholders and is emitted as a plain string.
         var formatBuilder = new StringBuilder();
-        var currentIndex = 0;
-        foreach (Match match in PlaceholderRegex.Matches(value))
+        var plainBuilder = new StringBuilder();
+        var hasPlaceholder = false;
+        foreach (var token in TranslationMessageSyntax.Tokenize(value))
         {
-            AppendEscapedFormatText(formatBuilder, value.Substring(currentIndex, match.Index - currentIndex));
-
-            var parameterName = match.Groups[1].Value.Trim();
-            var parameterIndex = Array.IndexOf(parameterNames, parameterName);
-            if (parameterIndex < 0)
+            switch (token.Kind)
             {
-                expression = string.Empty;
-                return false;
-            }
+                case MessageTokenKind.Placeholder:
+                    var parameterIndex = Array.IndexOf(parameterNames, token.Text);
+                    if (parameterIndex < 0)
+                    {
+                        expression = string.Empty;
+                        return false;
+                    }
 
-            formatBuilder.Append('{').Append(parameterIndex).Append('}');
-            currentIndex = match.Index + match.Length;
+                    formatBuilder.Append('{').Append(parameterIndex);
+                    if (token.Format is not null)
+                    {
+                        // A format specifier such as {date:d} is passed through to string.Format.
+                        formatBuilder.Append(':').Append(token.Format);
+                    }
+
+                    formatBuilder.Append('}');
+                    hasPlaceholder = true;
+                    break;
+                case MessageTokenKind.Literal:
+                    AppendEscapedFormatText(formatBuilder, token.Text);
+                    plainBuilder.Append(token.Text);
+                    break;
+                default:
+                    var text = value.Substring(token.Start, token.Length);
+                    AppendEscapedFormatText(formatBuilder, text);
+                    plainBuilder.Append(text);
+                    break;
+            }
         }
 
-        AppendEscapedFormatText(formatBuilder, value.Substring(currentIndex));
-
-        var literal = ToCSharpStringLiteral(formatBuilder.ToString());
-        if (parameterNames.Length == 0 || value.IndexOf('{') < 0)
+        if (!hasPlaceholder)
         {
-            expression = literal;
+            expression = ToCSharpStringLiteral(plainBuilder.ToString());
             return true;
         }
 
-        var expressionBuilder = new StringBuilder("string.Format(global::System.Globalization.CultureInfo.CurrentCulture, ", literal.Length + 96);
+        var literal = ToCSharpStringLiteral(formatBuilder.ToString());
+        var expressionBuilder = new StringBuilder("string.Format(" + providerParameter + ", ", literal.Length + 96);
         expressionBuilder.Append(literal);
         foreach (var identifier in GetParameterIdentifiers(parameterNames))
         {
@@ -845,15 +1101,16 @@ internal static class TranslationGeneratorUtilities
     public static string[] GetUnsupportedPlaceholders(string value, string[] parameterNames)
     {
         var unsupported = new List<string>();
-        foreach (Match match in PlaceholderRegex.Matches(value ?? string.Empty))
+        foreach (var token in TranslationMessageSyntax.Tokenize(value))
         {
-            var parameterName = match.Groups[1].Value.Trim();
-            if (Array.IndexOf(parameterNames, parameterName) >= 0 || unsupported.Contains(parameterName, StringComparer.Ordinal))
+            if (token.Kind != MessageTokenKind.Placeholder ||
+                Array.IndexOf(parameterNames, token.Text) >= 0 ||
+                unsupported.Contains(token.Text, StringComparer.Ordinal))
             {
                 continue;
             }
 
-            unsupported.Add(parameterName);
+            unsupported.Add(token.Text);
         }
 
         return unsupported.ToArray();

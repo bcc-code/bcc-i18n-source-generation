@@ -79,5 +79,24 @@ public sealed class I18NSourceGenerator : IIncrementalGenerator
                 I18NLanguageDictGenerator.AddSource(productionContext, translations);
             }
         });
+
+        // IStringLocalizer support is generated only when the compilation references
+        // Microsoft.Extensions.Localization.Abstractions. Both inputs are small and equatable, so the output
+        // does not regenerate when translations change.
+        var localizerSupport = context.CompilationProvider
+            .Select(static (compilation, _) => StringLocalizerSupport.Detect(compilation))
+            .WithTrackingName(TranslationGeneratorTrackingNames.StringLocalizerSupport);
+
+        var generatedNamespace = modelSet
+            .Select(static (translations, _) => translations.HasFallbackFile ? translations.GeneratedNamespace : null)
+            .WithTrackingName(TranslationGeneratorTrackingNames.GeneratedNamespace);
+
+        context.RegisterSourceOutput(generatedNamespace.Combine(localizerSupport), static (productionContext, pair) =>
+        {
+            if (pair.Left is { } namespaceName && pair.Right.IsAvailable)
+            {
+                I18NStringLocalizerGenerator.AddSource(productionContext, namespaceName, pair.Right);
+            }
+        });
     }
 }
