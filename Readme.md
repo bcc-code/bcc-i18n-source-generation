@@ -6,7 +6,7 @@ A Roslyn incremental source generator that reads JSON translation files (additio
 
 ## How It Works
 
-Add your translation files as `AdditionalFiles` in your `.csproj`. The generator uses `no.json` as the base/default language (English fallback) and any other `.json` files (e.g. `en.json`) as additional locales.
+Add your translation files as `AdditionalFiles` in your `.csproj`. Each file is one language, named by its file name (e.g. `en.json`, `no.json`). The fallback language is English (`en`) unless `FallbackLanguage` says otherwise (see below).
 
 The JSON files can contain nested objects (mapped to nested static classes) and string values (mapped to properties or constants). Strings support:
 
@@ -56,7 +56,7 @@ string key = LanguageKeys.message.hello; // == "message.hello"
 
 Generated file: `LanguageStrings.g.cs`
 
-A static class that holds all translations in a `Dictionary<string, Dictionary<string, string>>` (keyed by two-letter ISO language code and then by dot-separated key path). Exposes two lookup methods:
+A static class that looks up translations by dot-separated key path for the two-letter ISO language code of `CultureInfo.CurrentUICulture`, using the fallback language when there is no file for that language. The lookups are generated as `switch` expressions, so hot reload can apply changes to translation files without restarting the app. Exposes two lookup methods:
 
 ```csharp
 string value = LanguageStrings.GetString("message.hello");      // returns key if not found
@@ -104,7 +104,7 @@ The generated classes default to the consuming project's `RootNamespace`. You ca
 </PropertyGroup>
 ```
 
-With that configuration, the generator emits `MyApp.Localization.Language`, `MyApp.Localization.Language`, and `MyApp.Localization.LanguageStrings` instead of generating them in the global namespace.
+With that configuration, the generator emits `MyApp.Localization.Language`, `MyApp.Localization.LanguageKeys`, and `MyApp.Localization.LanguageStrings` instead of generating them in the global namespace.
 
 > **Note for project references:** When referencing the generator as a `ProjectReference` (rather than via NuGet), import the props file manually so `FallbackLanguage` and `GeneratedNamespace` are visible to the analyzer:
 >
