@@ -6,9 +6,9 @@ A plural message has forms separated by `|`. The generator chooses a form from t
 
 | Forms | 0 | 1 | 2 | 3 | 5 |
 | --- | --- | --- | --- | --- | --- |
-| 2 (`car \| cars`) | cars | car | cars | cars | cars |
-| 3 (`none \| one \| many`) | none | one | many | many | many |
-| 4 (`a \| b \| c \| d`) | a | b | c | d | d |
+| 2 (<code>car &#124; cars</code>) | cars | car | cars | cars | cars |
+| 3 (<code>none &#124; one &#124; many</code>) | none | one | many | many | many |
+| 4 (<code>a &#124; b &#124; c &#124; d</code>) | a | b | c | d | d |
 
 - **Two forms:** singular and plural. Only 1 is singular. 0 is plural, as in English ("0 cars").
 - **Three forms:** zero, one and many.

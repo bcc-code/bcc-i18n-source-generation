@@ -22,10 +22,10 @@ These constructs mean the same in vue-i18n and in the generated code:
 | --- | --- |
 | A value | `"Hello, {name}!"` |
 | Positional values | `"{0} of {1}"` |
-| Plural forms | `"no files \| one file \| {count} files"` |
+| Plural forms | <code>"no files &#124; one file &#124; {count} files"</code> |
 | Reuse another message | `"Press @:menu.save to continue."` |
 | Reuse with case change | `"@.upper:menu.save"`, `"@.lower:menu.save"`, `"@.capitalize:menu.save"` |
-| A special character | `"info{'@'}example.com"`, `"{'{'}"`, `"{'|'}"` |
+| A special character | `"info{'@'}example.com"`, `"{'{'}"`, <code>"{'&#124;'}"</code> |
 
 Example `en.json`:
 

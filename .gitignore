@@ -9,3 +9,6 @@ BccCode.I18N.SourceGen/artifacts/
 .runlogs/
 /artifacts-local/
 /artifacts/
+
+# MkDocs output
+site/

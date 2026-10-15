@@ -48,7 +48,7 @@ How a key becomes a member, in `Language`, `LocalizedLanguage` and its groups:
 | --- | --- |
 | No placeholders, not plural | Property: `string save` |
 | Placeholders `{a}`, `{b}` | Method: `string greeting(object a, object b)` |
-| Plural (any language uses `\|`) | Method with `int` first parameter: `string files(int count)` |
+| Plural (any language uses <code>&#124;</code>) | Method with <code>int</code> first parameter: <code>string files(int count)</code> |
 
 Parameter rules:
 

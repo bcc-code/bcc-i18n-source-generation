@@ -13,7 +13,7 @@ vue-i18n's file format is plain JSON with nested objects, one file per language,
 | Nested JSON objects, dot-separated keys | Yes | Yes |
 | Named placeholders `{name}` | Yes | Yes, as typed parameters |
 | List placeholders `{0}` | Yes | Yes, as parameters `_0`, `_1` |
-| Plural forms with `\|`, default rules | Yes | Yes, same rules |
+| Plural forms with <code>&#124;</code>, default rules | Yes | Yes, same rules |
 | Linked messages `@:key`, `@:{'key'}` | Yes | Yes, resolved at build time |
 | Modifiers `lower`, `upper`, `capitalize` | Yes | Yes |
 | Literal interpolation `{'text'}` with escapes | Yes | Yes |

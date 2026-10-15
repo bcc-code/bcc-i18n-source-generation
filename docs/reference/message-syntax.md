@@ -11,7 +11,7 @@ Messages use a subset of the [vue-i18n](https://vue-i18n.intlify.dev/guide/essen
 | `{name}` | Named placeholder | `"Hello, {name}!"` |
 | `{name:format}` | Placeholder with format specifier | `"Due {date:d}"` |
 | `{0}` | List placeholder | `"{0} is required."` |
-| `a \| b \| c` | Plural forms | `"no files \| one file \| {count} files"` |
+| <code>a &#124; b &#124; c</code> | Plural forms | <code>"no files &#124; one file &#124; {count} files"</code> |
 | `@:key` | Linked message | `"Press @:menu.save."` |
 | `@:{'key'}` | Linked message, quoted key | `"@:{'menu.save'}"` |
 | `@.lower:key`, `@.upper:key`, `@.capitalize:key` | Linked message with modifier | `"@.upper:menu.save"` |
@@ -118,7 +118,7 @@ A link is kept as written, and [I18N010](diagnostics.md#i18n010) is reported, wh
 | --- | --- |
 | `{` | `{'{'}` |
 | `}` | `{'}'}` |
-| `\|` | `{'\|'}` |
+| <code>&#124;</code> | <code>{'&#124;'}</code> |
 | `@` before `:` or `.` | `{'@'}` |
 
 ## Not supported
