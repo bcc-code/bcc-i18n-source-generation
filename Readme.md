@@ -125,13 +125,18 @@ Use the following commands from the nested repository root `BccCode.I18N.SourceG
 ```powershell
 dotnet test .\BccCode.I18N.SourceGen.IntegrationTests\BccCode.I18N.SourceGen.IntegrationTests.csproj
 
-dotnet pack .\BccCode.I18N.SourceGen\BccCode.I18N.SourceGen.csproj -c Release -o .\artifacts
+dotnet pack .\BccCode.I18N.SourceGen\BccCode.I18N.SourceGen.csproj -c Release -p:PackageVersion=0.0.0-local -o .\artifacts
 
 Remove-Item .\packages -Recurse -Force -ErrorAction SilentlyContinue
-dotnet restore .\BccCode.I18N.SourceGen.NuGetIntegrationTests\BccCode.I18N.SourceGen.NuGetIntegrationTests.csproj --packages .\packages --configfile .\nuget.integration-tests.config --force
-dotnet build .\BccCode.I18N.SourceGen.NuGetIntegrationTests\BccCode.I18N.SourceGen.NuGetIntegrationTests.csproj -c Release --packages .\packages --no-restore
-dotnet test .\BccCode.I18N.SourceGen.NuGetIntegrationTests\BccCode.I18N.SourceGen.NuGetIntegrationTests.csproj -c Release --no-build --no-restore
+dotnet restore .\BccCode.I18N.SourceGen.NuGetIntegrationTests -p:BccCodeI18NSourceGenPackageVersion=0.0.0-local --packages .\packages
+dotnet test .\BccCode.I18N.SourceGen.NuGetIntegrationTests -c Release --no-restore -p:BccCodeI18NSourceGenPackageVersion=0.0.0-local
 ```
+
+CI runs the same steps (`.github/workflows/test.yml`) on every pull request and push to main.
+
+### Releasing
+
+Push a tag `vX.Y.Z` (or a prerelease such as `vX.Y.Z-beta.1`) on a commit that is on `main`. `.github/workflows/publish-nuget.yml` then runs all tests, packs with that version, tests the packed package, pushes it to nuget.org via trusted publishing and creates a GitHub release with generated notes and the `.nupkg` attached.
 
 This mirrors the source-generator publishing flow described by Andrew Lock: first verify compiler integration through an analyzer-style project reference, then verify the actual packed analyzer from a local NuGet source without polluting the machine-wide NuGet cache.
 Clearing the local `packages` folder before restore is important when reusing the same package version locally, otherwise NuGet can keep an older packed analyzer and stale build props.

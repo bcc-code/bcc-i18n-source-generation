@@ -1,0 +1,72 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_call:
+    inputs:
+      version:
+        description: Package version to pack and test. Defaults to a CI prerelease version.
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VERSION: ${{ inputs.version || format('0.0.0-ci.{0}', github.run_number) }}
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+    defaults:
+      run:
+        working-directory: BccCode.I18N.SourceGen
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Unit and integration tests
+        run: dotnet test ../BccCode.I18N.SourceGen.slnx --configuration Release
+
+      - name: Pack
+        run: dotnet pack BccCode.I18N.SourceGen/BccCode.I18N.SourceGen.csproj --configuration Release -p:PackageVersion="$VERSION" --output artifacts
+
+      - name: Check package layout
+        run: |
+          package="artifacts/BccCode.I18N.SourceGen.$VERSION.nupkg"
+          contents="$(unzip -Z1 "$package")"
+          for file in analyzers/dotnet/cs/BccCode.I18N.SourceGen.dll build/BccCode.I18N.SourceGen.props Readme.md; do
+            if ! grep -qx "$file" <<< "$contents"; then
+              echo "::error::$file is missing from $package"
+              exit 1
+            fi
+          done
+          if grep -q '^lib/' <<< "$contents"; then
+            echo "::error::$package must not contain lib/ (the generator is not a runtime reference)"
+            exit 1
+          fi
+
+      # Consumes the package just packed (via the project's NuGet.config pointing at ./artifacts),
+      # restoring into an isolated folder so no cached package with the same version is used.
+      - name: Test packed package
+        run: |
+          dotnet restore BccCode.I18N.SourceGen.NuGetIntegrationTests -p:BccCodeI18NSourceGenPackageVersion="$VERSION" --packages "$RUNNER_TEMP/nuget-integration-packages"
+          dotnet test BccCode.I18N.SourceGen.NuGetIntegrationTests --configuration Release --no-restore -p:BccCodeI18NSourceGenPackageVersion="$VERSION"
+
+      - name: Upload package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nupkg
+          path: BccCode.I18N.SourceGen/artifacts/*.nupkg
+          if-no-files-found: error

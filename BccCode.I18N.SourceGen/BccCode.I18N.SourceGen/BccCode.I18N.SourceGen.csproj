@@ -17,6 +17,9 @@
         <Description>Incremental Roslyn source generator for strongly-typed i18n translations from JSON files.</Description>
         <Authors>BCC</Authors>
         <PackageReadmeFile>Readme.md</PackageReadmeFile>
+        <!-- The generator dll is packed by hand under analyzers/ (no lib/ output), so a .snupkg would be
+             empty. Embed the PDB, with Source Link, in the dll instead so the generator can be debugged. -->
+        <DebugType>embedded</DebugType>
     </PropertyGroup>
 
     <ItemGroup>
