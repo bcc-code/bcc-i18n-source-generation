@@ -919,13 +919,32 @@ internal static class TranslationGeneratorUtilities
         return builder.ToString();
     }
 
-    public static string EscapeXmlDoc(string text) =>
-        (text ?? string.Empty)
-        .Replace("&", "&amp;")
-        .Replace("<", "&lt;")
-        .Replace(">", "&gt;")
-        .Replace("\r", string.Empty)
-        .Replace("\n", "\\n");
+    public static string EscapeXmlDoc(string text)
+    {
+        var builder = new StringBuilder((text ?? string.Empty)
+            .Replace("&", "&amp;")
+            .Replace("<", "&lt;")
+            .Replace(">", "&gt;")
+            .Replace("\r", string.Empty)
+            .Replace("\n", "\\n"));
+
+        // Other line breaks would end the /// comment, and control characters are invisible.
+        for (var index = builder.Length - 1; index >= 0; index--)
+        {
+            if (NeedsUnicodeEscape(builder[index]))
+            {
+                var character = builder[index];
+                builder.Remove(index, 1).Insert(index, "\\u" + ((int)character).ToString("X4"));
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    // Characters that end a regular string literal or a // comment in C# (U+0085, U+2028, U+2029), and
+    // other control characters, which would be invisible in the generated source.
+    private static bool NeedsUnicodeEscape(char character) =>
+        char.IsControl(character) || character == (char)0x2028 || character == (char)0x2029;
 
     public static string ToCSharpStringLiteral(string value)
     {
@@ -955,7 +974,15 @@ internal static class TranslationGeneratorUtilities
                     builder.Append("\\0");
                     break;
                 default:
-                    builder.Append(character);
+                    if (NeedsUnicodeEscape(character))
+                    {
+                        builder.Append("\\u").Append(((int)character).ToString("X4"));
+                    }
+                    else
+                    {
+                        builder.Append(character);
+                    }
+
                     break;
             }
         }

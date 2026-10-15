@@ -265,6 +265,35 @@ public class TranslationFileParserTests
     Assert.Empty(result.Diagnostics.Array);
   }
 
+  // C# regular string literals and single-line comments end at these characters, and other control
+  // characters are invisible in the generated source, so the generator must escape them.
+  [Theory]
+  [InlineData("0085")]
+  [InlineData("2028")]
+  [InlineData("2029")]
+  [InlineData("0001")]
+  [InlineData("001B")]
+  [InlineData("007F")]
+  [InlineData("009F")]
+  public void Escaped_line_separators_and_control_characters_generate_valid_csharp(string hex)
+  {
+    var character = ((char)Convert.ToInt32(hex, 16)).ToString();
+    var json = "{ \"a@u" + hex + "b\": \"x@u" + hex + "y\", \"p\": \"{n}@u" + hex + "z | {n} items\" }";
+    json = json.Replace("@", "\\");
+
+    var (_, runResult, outputCompilation) = GeneratorTestHelpers.RunGenerator(
+        new I18NSourceGenerator(),
+        [new TestAdditionalFile("./en.json", json)],
+        fallbackLanguage: "en");
+
+    Assert.DoesNotContain(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult), static d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+    Assert.DoesNotContain(outputCompilation.GetDiagnostics(), static d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+    var generated = string.Concat(outputCompilation.SyntaxTrees
+        .Where(static tree => tree.FilePath.EndsWith(".g.cs", StringComparison.Ordinal))
+        .Select(static tree => tree.ToString()));
+    Assert.DoesNotContain(character, generated, StringComparison.Ordinal);
+  }
+
   [Fact]
   public void Accepts_escaped_nul_in_values_and_names_and_generates_valid_csharp()
   {
