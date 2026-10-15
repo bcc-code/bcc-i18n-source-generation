@@ -167,6 +167,51 @@ public class SourceGeneratorWithAdditionalFilesTests
             $"Expected generated output to be cached or unchanged on the second run, but saw {output.Reason}."));
   }
 
+  [Fact]
+  public void Generates_plural_method_when_only_a_non_fallback_language_is_plural()
+  {
+    var (_, runResult, outputCompilation) = GeneratorTestHelpers.RunGenerator(
+        new I18NSourceGenerator(),
+        [
+            new TestAdditionalFile("./en.json", """{ "item": "item", "owned": "{name} owns it" }"""),
+            new TestAdditionalFile("./no.json", """{ "item": "ingen ting | én ting | {count} ting", "owned": "{name} eier én | {name} eier {count}" }""")
+        ],
+        fallbackLanguage: "en");
+
+    Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
+    Assert.Empty(outputCompilation.GetDiagnostics().Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
+
+    var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    Assert.Contains("public static string item(int count) =>", languageSource, StringComparison.Ordinal);
+    Assert.Contains("(0, \"no\") => \"ingen ting\",", languageSource, StringComparison.Ordinal);
+    Assert.Contains("(_, \"no\") => string.Format(CultureInfo.CurrentCulture, \"{0} ting\", count),", languageSource, StringComparison.Ordinal);
+    Assert.Contains("(_, _) => \"item\",", languageSource, StringComparison.Ordinal);
+
+    Assert.Contains("public static string owned(int count, object name) =>", languageSource, StringComparison.Ordinal);
+    Assert.Contains("(_, _) => string.Format(CultureInfo.CurrentCulture, \"{1} owns it\", count, name),", languageSource, StringComparison.Ordinal);
+  }
+
+  [Fact]
+  public void Generates_single_form_case_when_only_the_fallback_language_is_plural()
+  {
+    var (_, runResult, outputCompilation) = GeneratorTestHelpers.RunGenerator(
+        new I18NSourceGenerator(),
+        [
+            new TestAdditionalFile("./en.json", """{ "car": "car | cars" }"""),
+            new TestAdditionalFile("./no.json", """{ "car": "bil" }""")
+        ],
+        fallbackLanguage: "en");
+
+    Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
+    Assert.Empty(outputCompilation.GetDiagnostics().Where(static diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
+
+    var languageSource = GeneratorTestHelpers.GetGeneratedSource(outputCompilation, "Language.g.cs");
+    Assert.Contains("public static string car(int count) =>", languageSource, StringComparison.Ordinal);
+    Assert.Contains("(_, \"no\") => \"bil\",", languageSource, StringComparison.Ordinal);
+    Assert.Contains("(0, _) => \"car\",", languageSource, StringComparison.Ordinal);
+    Assert.Contains("(_, _) => \"cars\",", languageSource, StringComparison.Ordinal);
+  }
+
   private static TestAdditionalFile[] CreateTranslationFiles() =>
   [
       new TestAdditionalFile("./no.json", NoJson),

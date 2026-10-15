@@ -568,6 +568,8 @@ internal static class TranslationFileParser
 
 internal static class TranslationGeneratorUtilities
 {
+    public const string DefaultCountParameter = "count";
+
     private static readonly Regex PlaceholderRegex = new(@"\{(\s*\w+\s*)\}", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public static bool IsJsonFile(AdditionalText file) =>
@@ -698,11 +700,13 @@ internal static class TranslationGeneratorUtilities
 
         if (isPlural && parameters.Count == 0)
         {
-            parameters.Add("count");
+            parameters.Add(DefaultCountParameter);
         }
 
         return parameters.ToArray();
     }
+
+    public static bool IsPluralValue(string value) => (value ?? string.Empty).IndexOf('|') >= 0;
 
     public static string[] SplitPluralParts(string value) =>
         (value ?? string.Empty)

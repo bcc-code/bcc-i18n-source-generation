@@ -5,6 +5,7 @@
     },
     "plural": {
         "car": "bil | biler",
+        "item": "ingen ting | én ting | {count} ting",
         "apple": "ingen epler | et eple | {count} epler"
     }
 }

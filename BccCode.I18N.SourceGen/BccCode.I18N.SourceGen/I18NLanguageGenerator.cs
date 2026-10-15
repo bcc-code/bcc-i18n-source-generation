@@ -96,8 +96,18 @@ internal static class I18NLanguageGenerator
         string indent)
     {
         var builder = new StringBuilder();
-        var isPlural = fallbackValue.Contains("|", StringComparison.Ordinal);
-        var parameters = TranslationGeneratorUtilities.GetParameterNames(fallbackValue, isPlural);
+        // A key is plural when any language uses pipe-separated variants, so one language
+        // can pluralize while the others (including the fallback) use a single form.
+        var fallbackIsPlural = TranslationGeneratorUtilities.IsPluralValue(fallbackValue);
+        var isPlural = fallbackIsPlural || translations.Values.Any(TranslationGeneratorUtilities.IsPluralValue);
+        var parameters = TranslationGeneratorUtilities.GetParameterNames(fallbackValue, fallbackIsPlural);
+        if (isPlural && !fallbackIsPlural)
+        {
+            // The fallback has no plural forms to infer the count parameter from, so it is always named "count".
+            parameters = new[] { TranslationGeneratorUtilities.DefaultCountParameter }
+                .Concat(parameters.Where(static parameter => parameter != TranslationGeneratorUtilities.DefaultCountParameter))
+                .ToArray();
+        }
 
         builder.AppendLine($"{indent}/// {TranslationGeneratorUtilities.EscapeXmlDoc(fallbackValue)}");
         builder.Append($"{indent}public static string {TranslationGeneratorUtilities.SanitizeName(name)}");
