@@ -27,7 +27,7 @@ private static string? GetStringOrNull0(string key) =>
 ```
 
 - `Language` and `LocalizedLanguage` members call methods in `LanguageTranslations`, one per key, each with a `switch` over the language.
-- `LanguageStrings` uses one lookup method per language, each a `switch` over the key.
+- `LanguageStrings` uses one lookup method per language, each a `switch` over the key. A language with more than 256 keys gets a `switch` over a hash of the key that calls one smaller `switch` per bucket (see [The cost](#the-cost)).
 - `ResolveLanguage` is a loop with `string.Equals` checks, with the aliases written into the method.
 - `Languages`, `Keys` and `GetAllStrings` build a new array or list on every call instead of returning a cached static one.
 - The run-time formatter behind `LanguageStrings.Format` is a set of static methods without static fields.
@@ -39,7 +39,7 @@ When a text changes, only these bodies change, and hot reload can replace them.
 - The listing members allocate on every call. They are meant for occasional use (export, a locale endpoint, a language picker). Cache the result yourself if you need it often.
 - `Language` resolves the language on every member access. Resolution is a few string comparisons without allocation.
 
-The C# compiler turns a `switch` over many string constants into a hash or length based lookup rather than a sequence of comparisons, so lookups by key stay fast with many keys.
+The C# compiler turns a `switch` over many string constants into a hash or length based lookup rather than a sequence of comparisons, so lookups by key stay fast with many keys. The compile time of such a `switch` grows with the square of its number of arms, though: one `switch` with 4,600 keys takes the compiler about 6 seconds. So a lookup with more than 256 keys is split into buckets by a 32-bit FNV-1a hash of the key, with on average at most 64 keys per bucket. Each bucket is its own method, so this is still hot-reload friendly. With 4,600 keys in three languages, this cut the compile time of the generated code from about 25 to 2 seconds, and a lookup takes about the same time or less.
 
 ## What still needs a restart
 
