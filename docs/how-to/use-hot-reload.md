@@ -22,7 +22,7 @@ Start the app with the debugger and use the IDE's hot reload command after savin
 
 ## What can be applied
 
-- **Changing the text of an existing key** changes only method bodies in the generated code. This can be applied.
+- **Changing the text of an existing key** changes only method bodies in the generated code. This can be applied. The translations are cached arrays, and the runtime clears the caches after the update (`MetadataUpdateHandler`, .NET 6 and later). Tools that do not call the handler keep the old texts until the app restarts.
 - **Adding, removing or renaming keys, or changing a key's placeholders** adds, removes or changes generated members. Whether such an edit can be applied without a restart depends on the hot reload support of your .NET version and IDE. If it cannot, `dotnet watch` asks to restart (or restarts, depending on its settings).
 
 ## If edits are not picked up

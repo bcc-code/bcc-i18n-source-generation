@@ -207,11 +207,11 @@ public class LocalizedLanguageTests
     var groups = GeneratorTestHelpers.GetGeneratedSource(compilation, "LocalizedLanguageGroups.g.cs");
     Assert.Contains("EditorBrowsableState.Never", groups, StringComparison.Ordinal);
     Assert.DoesNotContain("static readonly", groups, StringComparison.Ordinal);
-    foreach (var name in new[] { "LocalizedLanguage.g.cs", "LocalizedLanguageGroups.g.cs", "LanguageTranslations.g.cs" })
+    foreach (var name in new[] { "LocalizedLanguage.g.cs", "LocalizedLanguageGroups.g.cs", "Language.g.cs", "LanguageStrings.g.cs" })
     {
       var source = GeneratorTestHelpers.GetGeneratedSource(compilation, name);
       Assert.DoesNotContain("static readonly", source, StringComparison.Ordinal);
-      Assert.DoesNotContain("static LanguageTranslations(", source, StringComparison.Ordinal);
+      Assert.DoesNotContain("static LanguageStrings(", source, StringComparison.Ordinal);
     }
   }
 
@@ -282,8 +282,8 @@ public class LocalizedLanguageTests
     Assert.DoesNotContain(compilation.GetDiagnostics(), static d => d.Severity == DiagnosticSeverity.Error);
     var source = GeneratorTestHelpers.GetGeneratedSource(compilation, "Language.g.cs");
     Assert.Contains("public static string price(object amount) =>", source, StringComparison.Ordinal);
-    var translations = GeneratorTestHelpers.GetGeneratedSource(compilation, "LanguageTranslations.g.cs");
-    Assert.Contains("\"{0:N2} and {0:N0}\"", translations, StringComparison.Ordinal);
+    var strings = GeneratorTestHelpers.GetGeneratedSource(compilation, "LanguageStrings.g.cs");
+    Assert.Contains("\"{amount:N2} and {amount:N0}\",", strings, StringComparison.Ordinal);
   }
 
   [Fact]

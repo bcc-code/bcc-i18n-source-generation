@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using System.Text;
 using BccCode.I18N.SourceGen.Tests.Utils;
 using Xunit;
@@ -5,14 +7,14 @@ using Xunit;
 namespace BccCode.I18N.SourceGen.Tests;
 
 /// <summary>
-/// Key lookups with more arms than <see cref="I18NLanguageDictGenerator.MaxArmsPerKeySwitch"/> are split into
-/// hash buckets, because the compiler time for one large string switch grows with the square of its arm count.
+/// The translations are emitted as data arrays with a key index, so the compiler time grows linearly with the number
+/// of keys (a switch over all keys grows with the square). These tests run a large set through the generated code.
 /// </summary>
 public class LargeTranslationSetTests
 {
   private const int KeyCount = 600;
 
-  // Every key has a placeholder, so GetParameterNames is large too. Norwegian translates every other key.
+  // Every key has a placeholder, so the parameter names array is large too. Norwegian translates every other key.
   private static TestAdditionalFile[] Files()
   {
     var en = new StringBuilder("{");
@@ -34,27 +36,30 @@ public class LargeTranslationSetTests
       LocalizedLanguageTests.Run(Files(), body, checkedOverflow: checkedOverflow);
 
   [Fact]
-  public void Generated_lookups_are_split_into_buckets()
+  public void Generated_lookups_are_arrays_and_not_switches_over_the_keys()
   {
     var (_, _, compilation) = GeneratorTestHelpers.RunGenerator(new I18NSourceGenerator(), Files(), fallbackLanguage: "en");
     var source = GeneratorTestHelpers.GetGeneratedSource(compilation, "LanguageStrings.g.cs");
 
-    Assert.Contains("private static uint GetKeyHash(string key)", source);
-    Assert.Contains("private static string? GetStringOrNull0(string key) =>", source);
-    Assert.Contains("(GetKeyHash(key) & 15u) switch", source);
-    Assert.Contains("private static string? GetStringOrNull0_", source);
-    Assert.Contains("private static string[]? GetParameterNames_", source);
+    Assert.Contains("private static string[] KeysData() =>", source);
+    Assert.Contains("private static string[]?[] ParameterNamesData() =>", source);
+    Assert.Contains("private static string?[] StringsData0() =>", source);
+    Assert.Contains("private static string?[] StringsData1() =>", source);
+    Assert.DoesNotContain("GetKeyHash", source);
+    Assert.DoesNotContain("key switch", source);
+    Assert.DoesNotContain("GetStringOrNull0", source);
   }
 
   [Fact]
-  public void Small_lookups_stay_a_single_switch()
+  public void Typed_members_call_the_helper_with_the_key_index()
   {
-    var files = new[] { new TestAdditionalFile("./en.json", """{ "a": "A", "b": "B {x}" }""") };
-    var (_, _, compilation) = GeneratorTestHelpers.RunGenerator(new I18NSourceGenerator(), files, fallbackLanguage: "en");
-    var source = GeneratorTestHelpers.GetGeneratedSource(compilation, "LanguageStrings.g.cs");
+    var (_, _, compilation) = GeneratorTestHelpers.RunGenerator(new I18NSourceGenerator(), Files(), fallbackLanguage: "en");
+    var source = GeneratorTestHelpers.GetGeneratedSource(compilation, "Language.g.cs");
 
-    Assert.DoesNotContain("GetKeyHash", source);
-    Assert.Contains("private static string? GetStringOrNull0(string key) =>", source);
+    // Ordinal order: group0_key0, group0_key105, ... The index of group1_key1 is its position in that order.
+    var keys = Enumerable.Range(0, KeyCount).Select(static index => $"group{index % 7}_key{index}").OrderBy(static key => key, StringComparer.Ordinal).ToList();
+    var position = keys.IndexOf("group1_key1");
+    Assert.Contains($"LanguageStrings.Translate({position} /* group1_key1 */, ", source);
   }
 
   [Fact]
@@ -82,26 +87,29 @@ public class LargeTranslationSetTests
   }
 
   [Fact]
-  public void Key_hash_does_not_overflow_in_a_checked_context()
+  public void Lookups_work_in_a_checked_context()
   {
     var result = Run("""return LanguageStrings.GetString("group1_key1", new CultureInfo("en"));""", checkedOverflow: true);
 
     Assert.Equal("en 1 {name}", result);
   }
 
-  [Theory]
-  [InlineData("", 2166136261u)]
-  [InlineData("a", 0xe40c292cu)]
-  [InlineData("foobar", 0xbf9cf968u)]
-  public void Key_hash_is_32_bit_fnv1a(string key, uint expected) =>
-      Assert.Equal(expected, I18NLanguageDictGenerator.ComputeKeyHash(key));
+  [Fact]
+  public void Typed_members_and_Format_agree_in_a_large_set()
+  {
+    var result = Run(
+        $$"""
+        var nb = new LocalizedLanguage(new CultureInfo("nb-NO"));
+        var wrong = 0;
+        for (var index = 0; index < {{KeyCount}}; index += 7)
+        {
+            var key = "group" + (index % 7) + "_key" + index;
+            if (LanguageStrings.Format(key, new CultureInfo("nb-NO"), "Kari") != (index % 2 == 0 ? "no " : "en ") + index + " Kari") wrong++;
+        }
 
-  [Theory]
-  [InlineData(1, 1)]
-  [InlineData(64, 1)]
-  [InlineData(65, 2)]
-  [InlineData(600, 16)]
-  [InlineData(4633, 128)]
-  public void Bucket_count_is_a_power_of_two_with_at_most_64_arms_on_average(int arms, int expected) =>
-      Assert.Equal(expected, I18NLanguageDictGenerator.GetBucketCount(arms));
+        return string.Join("|", wrong, nb.group0_key0("Kari"), nb.group1_key1("Kari"), Language.group0_key0("Kari"));
+        """);
+
+    Assert.Equal("0|no 0 Kari|en 1 Kari|en 0 Kari", result);
+  }
 }

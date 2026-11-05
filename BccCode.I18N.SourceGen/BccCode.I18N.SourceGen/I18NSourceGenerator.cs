@@ -72,11 +72,17 @@ public sealed class I18NSourceGenerator : IIncrementalGenerator
             }
         });
 
-        context.RegisterSourceOutput(modelSet, static (productionContext, translations) =>
+        // The MetadataUpdateHandler attribute (.NET 6+) lets LanguageStrings clear its cached arrays after a hot
+        // reload edit. Detection depends on the compilation only, so translation edits do not run it again.
+        var metadataUpdateHandler = context.CompilationProvider
+            .Select(static (compilation, _) => compilation.GetTypeByMetadataName("System.Reflection.Metadata.MetadataUpdateHandlerAttribute") is not null)
+            .WithTrackingName(TranslationGeneratorTrackingNames.MetadataUpdateHandlerSupport);
+
+        context.RegisterSourceOutput(modelSet.Combine(metadataUpdateHandler), static (productionContext, pair) =>
         {
-            if (translations.HasFallbackFile)
+            if (pair.Left.HasFallbackFile)
             {
-                I18NLanguageDictGenerator.AddSource(productionContext, translations);
+                I18NLanguageDictGenerator.AddSource(productionContext, pair.Left, pair.Right);
             }
         });
 

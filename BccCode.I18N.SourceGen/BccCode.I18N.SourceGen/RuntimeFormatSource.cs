@@ -5,7 +5,7 @@ namespace BccCode.I18N.SourceGen;
 /// It mirrors <see cref="TranslationMessageSyntax"/>: placeholders <c>{name}</c> / <c>{name:format}</c>
 /// (name is <c>\w+</c>, format has no braces), literals <c>{'text'}</c> and pipes outside of both.
 /// Links are already resolved in the stored values, so they are not handled here.
-/// Only methods are emitted (no static fields), so hot reload keeps working. The code uses C# 8 features at most.
+/// It reads the data arrays and caches that <c>I18NLanguageDictGenerator</c> emits next to it. The code uses C# 8 features at most.
 /// </summary>
 internal static class RuntimeFormatSource
 {
@@ -14,19 +14,57 @@ private sealed class MissingArgument
 {
 }
 
+// The index of the key in the key list, or -1 when the key is unknown.
+private static int FindKeyIndex(string? key)
+{
+    if (key == null)
+    {
+        return -1;
+    }
+
+    int index;
+    return KeyIndex().TryGetValue(key, out index) ? index : -1;
+}
+
+// The stored message of the key in the language, or in the fallback language when the language lacks the key.
+private static string? GetEntry(int index, string? language) =>
+    GetStrings(language)[index] ?? FallbackStrings()[index];
+
+// The typed members of Language, LocalizedLanguage and the group structs call these with the index of their key.
+// A null language (default(LocalizedLanguage)) uses the fallback language. Like Format, a language whose message
+// uses placeholders that the key does not have is skipped as a whole in favor of the fallback language.
+// The arguments follow the parameter order of the member (for a plural message, the first one is the count).
+internal static string Translate(int index, string? language, global::System.IFormatProvider? provider)
+{
+    var text = GetEntry(index, HasUnsupportedPlaceholders(index, language) ? FallbackLanguage : language)!;
+    return text.IndexOf('{') < 0 ? text : Substitute(text, ParameterNames()[index], global::System.Array.Empty<object?>(), provider);
+}
+
+internal static string Translate(int index, string? language, global::System.IFormatProvider? provider, object?[] args)
+{
+    var text = GetEntry(index, HasUnsupportedPlaceholders(index, language) ? FallbackLanguage : language)!;
+    return Substitute(SelectForm(text, args), ParameterNames()[index], args, provider);
+}
+
 // byIndex binds a numeric placeholder {n} to args[n] (as IStringLocalizer callers pass them). Otherwise the
 // arguments follow the parameter order of the Language member for the key.
 private static string FormatCore(string key, string language, global::System.IFormatProvider? provider, object?[]? args, bool byIndex)
 {
+    var index = FindKeyIndex(key);
+    if (index < 0)
+    {
+        return key;
+    }
+
     // Like the Language members, a language whose message uses placeholders that the key does not have
     // is skipped as a whole in favor of the fallback language.
-    var text = GetStringOrNullByLanguage(key, HasUnsupportedPlaceholders(key, language) ? FallbackLanguage : language);
+    var text = GetEntry(index, HasUnsupportedPlaceholders(index, language) ? FallbackLanguage : language);
     if (text == null)
     {
         return key;
     }
 
-    var names = GetParameterNames(key);
+    var names = ParameterNames()[index];
     var arguments = args ?? global::System.Array.Empty<object?>();
     if (byIndex)
     {

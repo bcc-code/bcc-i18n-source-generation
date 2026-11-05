@@ -9,7 +9,6 @@ The generator emits these types into the namespace set by [`GeneratedNamespace`]
 | `LocalizedLanguageGroups` | `LocalizedLanguageGroups.g.cs` | `public static class`, hidden from completion | The fallback file exists |
 | `LanguageKeys` | `LanguageKeys.g.cs` | `public static class` | The fallback file exists |
 | `LanguageStrings` | `LanguageStrings.g.cs` | `public static class` | The fallback file exists |
-| `LanguageTranslations` | `LanguageTranslations.g.cs` | `internal static class` | The fallback file exists |
 | `LanguageStringLocalizer` | `LanguageStringLocalizer.g.cs` | `public sealed class` | The fallback file exists and the project references `Microsoft.Extensions.Localization.Abstractions` |
 | `LanguageStringLocalizerFactory` | `LanguageStringLocalizerFactory.g.cs` | `public sealed class` | Same as `LanguageStringLocalizer` |
 
@@ -179,7 +178,3 @@ Implements `Microsoft.Extensions.Localization.IStringLocalizer`. Generated only 
 ## `LanguageStringLocalizerFactory`
 
 Implements `IStringLocalizerFactory`. Both `Create(Type)` and `Create(string baseName, string location)` return `new LanguageStringLocalizer()`, because the whole project shares one set of translation files. See [Use IStringLocalizer](../how-to/use-istringlocalizer.md) for registration.
-
-## `LanguageTranslations`
-
-`internal`. Holds one method per key with the translations of all languages as a `switch` expression. `Language` and `LocalizedLanguage` call it. It is not meant to be called directly.

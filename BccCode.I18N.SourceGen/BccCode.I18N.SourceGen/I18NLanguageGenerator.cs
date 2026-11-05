@@ -1,20 +1,22 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Text;
 using Microsoft.CodeAnalysis;
 
 namespace BccCode.I18N.SourceGen;
 
 /// <summary>
-/// Generates <c>Language</c> (static, current culture), <c>LocalizedLanguage</c> (explicit culture) and the
-/// internal <c>LanguageTranslations</c> that holds the single translation switch per key used by both.
+/// Generates <c>Language</c> (static, current culture) and <c>LocalizedLanguage</c> (explicit culture) with its groups.
+/// Every member calls <c>LanguageStrings.Translate</c> with the index of its key. Reports I18N006.
 /// </summary>
 internal static class I18NLanguageGenerator
 {
     private const string LanguageClass = "Language";
     private const string LocalizedStruct = "LocalizedLanguage";
     private const string GroupsClass = "LocalizedLanguageGroups";
-    private const string TranslationsClass = "LanguageTranslations";
+    private const string StringsClass = "LanguageStrings";
 
     private const string CultureInfoType = "global::System.Globalization.CultureInfo";
     private const string LanguageFieldBase = "__language";
@@ -32,20 +34,17 @@ internal static class I18NLanguageGenerator
         }
 
         var root = TranslationTreeBuilder.BuildTree(translations.FallbackFile.Entries);
-        var generationContext = new GenerationContext(context, translationsByKey, filePathsByLanguage, translations.FallbackLanguage, ns);
+        var keyIndex = TranslationKeyIndex.Create(translations.Files);
+        var generationContext = new GenerationContext(context, translationsByKey, filePathsByLanguage, translations.FallbackLanguage, ns, keyIndex);
         var plan = Plan.Create(root, generationContext);
+        foreach (var leaf in plan.Leaves)
+        {
+            ReportPlaceholderMismatches(generationContext, leaf);
+        }
 
         var languageWriter = GeneratedFile.Begin(ns, LanguageClass);
         WriteLanguageMembers(languageWriter, generationContext, root, plan);
         GeneratedFile.AddSource(context, languageWriter, ns, LanguageClass);
-
-        var translationsWriter = GeneratedFile.Begin(ns, TranslationsClass, "internal static class " + TranslationsClass);
-        foreach (var leaf in plan.Leaves)
-        {
-            WriteTranslationMethod(translationsWriter, generationContext, leaf);
-        }
-
-        GeneratedFile.AddSource(context, translationsWriter, ns, TranslationsClass);
 
         var structWriter = GeneratedFile.Begin(ns, LocalizedStruct, "public readonly struct " + LocalizedStruct);
         var rootFields = plan.GetFields(root);
@@ -55,7 +54,7 @@ internal static class I18NLanguageGenerator
         structWriter.Append("public ").Append(LocalizedStruct).Append('(').Append(CultureInfoType).AppendLine(" culture)");
         structWriter.OpenBlock();
         structWriter.Append("this.").Append(rootFields.Culture).AppendLine(" = culture;");
-        structWriter.Append("this.").Append(rootFields.Language).Append(" = ").Append(Qualify(ns, "LanguageStrings"))
+        structWriter.Append("this.").Append(rootFields.Language).Append(" = ").Append(Qualify(ns, StringsClass))
             .AppendLine(".ResolveLanguage(culture);");
         structWriter.CloseBlock();
         WriteInstanceMembers(structWriter, generationContext, root, plan);
@@ -104,16 +103,18 @@ internal static class I18NLanguageGenerator
             Dictionary<string, Dictionary<string, string>> translationsByKey,
             Dictionary<string, string> filePathsByLanguage,
             string fallbackLanguage,
-            string generatedNamespace)
+            string generatedNamespace,
+            TranslationKeyIndex keyIndex)
         {
             SourceContext = sourceContext;
             TranslationsByKey = translationsByKey;
             FilePathsByLanguage = filePathsByLanguage;
             FallbackLanguage = fallbackLanguage;
-            TranslationsType = Qualify(generatedNamespace, TranslationsClass);
+            KeyIndex = keyIndex;
+            StringsType = Qualify(generatedNamespace, StringsClass);
             GroupsType = Qualify(generatedNamespace, GroupsClass);
             // Fully qualified so that a key named LanguageStrings cannot shadow it.
-            CurrentLanguage = Qualify(generatedNamespace, "LanguageStrings") + ".ResolveLanguage(" + CultureInfoType + ".CurrentUICulture)";
+            CurrentLanguage = StringsType + ".ResolveLanguage(" + CultureInfoType + ".CurrentUICulture)";
         }
 
         public SourceProductionContext SourceContext { get; }
@@ -124,7 +125,10 @@ internal static class I18NLanguageGenerator
 
         public string FallbackLanguage { get; }
 
-        public string TranslationsType { get; }
+        public TranslationKeyIndex KeyIndex { get; }
+
+        /// <summary>Fully qualified, so that a key named LanguageStrings cannot shadow it.</summary>
+        public string StringsType { get; }
 
         public string GroupsType { get; }
 
@@ -135,34 +139,23 @@ internal static class I18NLanguageGenerator
     {
         public LeafInfo(
             TranslationNode node,
-            string methodName,
             bool isPlural,
             string[] parameters,
-            Dictionary<string, string> translations)
+            Dictionary<string, string> translations,
+            int keyIndex)
         {
             Node = node;
-            MethodName = methodName;
             IsPlural = isPlural;
             Parameters = parameters;
             Identifiers = TranslationGeneratorUtilities.GetParameterIdentifiers(parameters);
             Translations = translations;
-
-            // The implementation method's own parameters must not collide with placeholder parameters.
-            var taken = new HashSet<string>(Identifiers, StringComparer.Ordinal);
-            LanguageParameter = AllocateName(TranslationGeneratorUtilities.LanguageParameter, taken);
-            ProviderParameter = AllocateName(TranslationGeneratorUtilities.FormatProviderParameter, taken);
+            KeyIndex = keyIndex;
         }
-
-        /// <summary>Name of the implementation method's language parameter, unique among the placeholder parameters.</summary>
-        public string LanguageParameter { get; }
-
-        /// <summary>Name of the implementation method's format provider parameter, unique among the placeholder parameters.</summary>
-        public string ProviderParameter { get; }
 
         public TranslationNode Node { get; }
 
-        /// <summary>Name of the implementation method in <c>LanguageTranslations</c>.</summary>
-        public string MethodName { get; }
+        /// <summary>The index of the key in <c>LanguageStrings</c>.</summary>
+        public int KeyIndex { get; }
 
         public bool IsPlural { get; }
 
@@ -219,7 +212,7 @@ internal static class I18NLanguageGenerator
     }
 
     /// <summary>
-    /// Names and analysis shared by the generated files. Implementation methods and group struct types get
+    /// Names and analysis shared by the generated files. Group struct types get
     /// names derived from the key path (sanitized, joined with '_'). Collisions get a numeric suffix, and a
     /// group type also avoids the names of its own members.
     /// </summary>
@@ -227,7 +220,6 @@ internal static class I18NLanguageGenerator
     {
         private readonly Dictionary<TranslationNode, LeafInfo> _leavesByNode = new();
         private readonly Dictionary<TranslationNode, GroupInfo> _groupsByNode = new();
-        private readonly HashSet<string> _usedMethodNames = new(StringComparer.Ordinal) { TranslationsClass };
         private readonly HashSet<string> _usedGroupNames = new(StringComparer.Ordinal) { GroupsClass };
         private readonly Dictionary<TranslationNode, string> _instanceMemberNames = new();
         private readonly Dictionary<TranslationNode, FieldNames> _fieldNames = new();
@@ -275,7 +267,7 @@ internal static class I18NLanguageGenerator
                     continue;
                 }
 
-                var leaf = CreateLeaf(child, translations);
+                var leaf = CreateLeaf(child, translations, context.KeyIndex);
                 _leavesByNode.Add(child, leaf);
                 Leaves.Add(leaf);
             }
@@ -330,22 +322,15 @@ internal static class I18NLanguageGenerator
             return name;
         }
 
-        private LeafInfo CreateLeaf(TranslationNode node, Dictionary<string, string> translations)
+        private static LeafInfo CreateLeaf(TranslationNode node, Dictionary<string, string> translations, TranslationKeyIndex keyIndex)
         {
-            var baseName = TranslationGeneratorUtilities.SanitizeName(node.KeyPath!.Replace('.', '_'));
-            var methodName = baseName;
-            for (var suffix = 2; !_usedMethodNames.Add(methodName); suffix++)
-            {
-                methodName = baseName + suffix;
-            }
-
             var fallbackValue = node.Value!;
 
             // A key is plural when any language uses pipe-separated variants, so one language
             // can pluralize while the others (including the fallback) use a single form.
             var parameters = TranslationGeneratorUtilities.GetKeyParameters(fallbackValue, translations.Values, out var isPlural);
 
-            return new LeafInfo(node, methodName, isPlural, parameters, translations);
+            return new LeafInfo(node, isPlural, parameters, translations, keyIndex.GetIndex(node.KeyPath!));
         }
     }
 
@@ -456,6 +441,7 @@ internal static class I18NLanguageGenerator
         writer.AppendLine(" =>");
     }
 
+    // The call carries the key as a comment for debugging.
     private static void WriteTranslationCall(
         IndentedWriter writer,
         GenerationContext context,
@@ -463,148 +449,62 @@ internal static class I18NLanguageGenerator
         string languageExpression,
         string providerExpression)
     {
-        writer.Append(context.TranslationsType).Append('.').Append(leaf.MethodName)
-            .Append('(').Append(languageExpression).Append(", ").Append(providerExpression);
-        foreach (var identifier in leaf.Identifiers)
+        writer.Append(context.StringsType).Append(".Translate(").Append(leaf.KeyIndex.ToString(CultureInfo.InvariantCulture))
+            .Append(" /* ").Append(SanitizeComment(leaf.KeyPath)).Append(" */, ")
+            .Append(languageExpression).Append(", ").Append(providerExpression);
+        if (leaf.Identifiers.Length > 0)
         {
-            writer.Append(", ").Append(identifier);
+            writer.Append(", new object?[] { ").Append(string.Join(", ", leaf.Identifiers)).Append(" }");
         }
 
         writer.AppendLine(");");
     }
 
-    // LanguageTranslations: one implementation per key, shared by Language and LocalizedLanguage.
-    private static void WriteTranslationMethod(IndentedWriter writer, GenerationContext context, LeafInfo leaf)
+    // The text of a /* */ comment must not contain the end of the comment or a line break.
+    private static string SanitizeComment(string text)
     {
-        var fallbackLanguage = context.FallbackLanguage;
-        var keyPath = leaf.KeyPath;
-        var parameters = leaf.Parameters;
-        var identifiers = leaf.Identifiers;
-        var isPlural = leaf.IsPlural;
-        var fallbackValue = leaf.FallbackValue;
-
-        writer.Append("public static string ").Append(leaf.MethodName)
-            .Append("(string? ").Append(leaf.LanguageParameter)
-            .Append(", global::System.IFormatProvider? ").Append(leaf.ProviderParameter);
-        for (var index = 0; index < identifiers.Length; index++)
+        var builder = new StringBuilder(text.Length);
+        foreach (var character in text)
         {
-            writer.Append(", ").Append(leaf.GetParameterType(index)).Append(' ').Append(identifiers[index]);
+            builder.Append(char.IsControl(character) || character == (char)0x2028 || character == (char)0x2029 ? ' ' : character);
         }
 
-        writer.AppendLine(") =>");
-        writer.Indent();
+        return builder.ToString().Replace("*/", "* /");
+    }
 
+    // A language whose message uses placeholders that the key does not have is skipped as a whole in favor of the
+    // fallback language. LanguageStrings knows these (language, key) pairs, and this reports each of them once.
+    private static void ReportPlaceholderMismatches(GenerationContext context, LeafInfo leaf)
+    {
+        var fallbackLanguage = context.FallbackLanguage;
         var otherTranslations = leaf.Translations
             .Where(pair => !string.Equals(pair.Key, fallbackLanguage, StringComparison.OrdinalIgnoreCase))
             .OrderBy(static pair => pair.Key, StringComparer.Ordinal);
 
-        if (isPlural)
+        foreach (var translation in otherTranslations)
         {
-            // vue-i18n uses the absolute value of the count to pick the variant. The count is widened to long
-            // first, so that int.MinValue cannot overflow (also in a checked context). The int itself is used for formatting.
-            var count = identifiers[0];
-            writer.Append("(global::System.Math.Abs((long)").Append(count).Append("), ")
-                .Append(leaf.LanguageParameter).AppendLine(") switch");
-            writer.OpenBlock();
-
-            foreach (var translation in otherTranslations)
+            // For a plural message the first variant with an unsupported placeholder is reported.
+            var parts = leaf.IsPlural
+                ? TranslationGeneratorUtilities.SplitPluralParts(translation.Value)
+                : new[] { translation.Value };
+            foreach (var part in parts)
             {
-                WritePluralCases(writer, context, leaf, translation.Key, translation.Value, isFallback: false);
-            }
-
-            WritePluralCases(writer, context, leaf, fallbackLanguage, fallbackValue, isFallback: true);
-        }
-        else
-        {
-            writer.Append(leaf.LanguageParameter).AppendLine(" switch");
-            writer.OpenBlock();
-
-            foreach (var translation in otherTranslations)
-            {
-                if (!TryCreateExpression(context, leaf, translation.Key, translation.Value, out var expression))
+                var unsupportedPlaceholders = TranslationGeneratorUtilities.GetUnsupportedPlaceholders(part, leaf.Parameters);
+                if (unsupportedPlaceholders.Length == 0)
                 {
                     continue;
                 }
 
-                writer.Append(TranslationGeneratorUtilities.ToCSharpStringLiteral(translation.Key))
-                    .Append(" => ").Append(expression).AppendLine(",");
-            }
+                var location = context.FilePathsByLanguage.TryGetValue(translation.Key, out var filePath)
+                    ? new LocationInfo(filePath).ToLocation()
+                    : Location.None;
 
-            TranslationGeneratorUtilities.TryCreateFormatExpression(fallbackValue, parameters, out var fallbackExpression, leaf.ProviderParameter);
-            writer.Append("_ => ").Append(fallbackExpression).AppendLine(",");
-        }
-
-        writer.CloseBlock(";");
-        writer.Outdent();
-        writer.AppendLine();
-    }
-
-    private static void WritePluralCases(
-        IndentedWriter writer,
-        GenerationContext context,
-        LeafInfo leaf,
-        string language,
-        string value,
-        bool isFallback)
-    {
-        // Every variant is validated before any arm is written, so a language with one invalid
-        // variant falls back as a whole instead of mixing its own and the fallback's variants.
-        var parts = TranslationGeneratorUtilities.SplitPluralParts(value);
-        var expressions = new string[parts.Length];
-        for (var index = 0; index < parts.Length; index++)
-        {
-            if (!TryCreateExpression(context, leaf, language, parts[index], out expressions[index]))
-            {
-                return;
+                context.SourceContext.ReportDiagnostic(Diagnostic.Create(
+                    TranslationGeneratorDiagnostics.PlaceholderMismatch,
+                    location,
+                    $"Translation key '{leaf.KeyPath}' in language '{translation.Key}' uses placeholders [{string.Join(", ", unsupportedPlaceholders)}] that are not present in the fallback language. The fallback translation will be used instead."));
+                break;
             }
         }
-
-        var languagePattern = isFallback ? "_" : TranslationGeneratorUtilities.ToCSharpStringLiteral(language);
-        for (var index = 0; index < expressions.Length; index++)
-        {
-            writer.Append('(');
-            if (index == expressions.Length - 1)
-            {
-                writer.Append('_');
-            }
-            else if (expressions.Length == 2)
-            {
-                // vue-i18n's rule for two forms: a count of 1 uses the first form, anything else the second.
-                writer.Append('1');
-            }
-            else
-            {
-                // Three or more forms: the count selects the form, and the last form is used for larger counts.
-                writer.Append(index.ToString());
-            }
-
-            writer.Append(", ").Append(languagePattern).Append(") => ").Append(expressions[index]).AppendLine(",");
-        }
-    }
-
-    private static bool TryCreateExpression(
-        GenerationContext context,
-        LeafInfo leaf,
-        string language,
-        string value,
-        out string expression)
-    {
-        var keyPath = leaf.KeyPath;
-        var parameters = leaf.Parameters;
-        if (TranslationGeneratorUtilities.TryCreateFormatExpression(value, parameters, out expression, leaf.ProviderParameter))
-        {
-            return true;
-        }
-
-        var location = context.FilePathsByLanguage.TryGetValue(language, out var filePath)
-            ? new LocationInfo(filePath).ToLocation()
-            : Location.None;
-
-        var unsupportedPlaceholders = TranslationGeneratorUtilities.GetUnsupportedPlaceholders(value, parameters);
-        context.SourceContext.ReportDiagnostic(Diagnostic.Create(
-            TranslationGeneratorDiagnostics.PlaceholderMismatch,
-            location,
-            $"Translation key '{keyPath}' in language '{language}' uses placeholders [{string.Join(", ", unsupportedPlaceholders)}] that are not present in the fallback language. The fallback translation will be used instead."));
-        return false;
     }
 }
