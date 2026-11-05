@@ -4,7 +4,7 @@
 
 .NET hot reload applies an edit by replacing method bodies in the running process. It cannot run a static field initializer or static constructor again. A static field keeps the value it got when the type was first used, even after the code that computed it changes.
 
-A natural way to generate translations would be a static dictionary:
+A natural way to generate translations would be a static dictionary that is filled by an initializer:
 
 ```csharp
 private static readonly Dictionary<string, string> English = new() { ["menu.save"] = "Save", ... };
@@ -14,32 +14,67 @@ With that shape, an edit to a JSON file produces a new initializer, which hot re
 
 ## The shape the generator uses instead
 
-All translation data lives in method bodies, as `switch` expressions:
+The translations are data arrays that are built by methods, and the arrays are cached in static fields that have no initializer. The runtime clears the caches after a hot reload edit.
+
+All key paths of all translation files, sorted ordinally, form the key index. The position of a key in that list is its index. `LanguageStrings` has these methods, which contain only data:
 
 ```csharp
-private static string? GetStringOrNull0(string key) =>
-    key switch
+private static string[] KeysData() =>
+    new string[]
     {
-        "menu.save" => "Save",
-        "menu.cancel" => "Cancel",
-        _ => null,
+        "menu.cancel",
+        "menu.save",
+    };
+
+// "en"
+private static string?[] StringsData0() =>
+    new string?[]
+    {
+        "Cancel",
+        "Save",
     };
 ```
 
-- `Language` and `LocalizedLanguage` members call methods in `LanguageTranslations`, one per key, each with a `switch` over the language.
-- `LanguageStrings` uses one lookup method per language, each a `switch` over the key. A language with more than 256 keys gets a `switch` over a hash of the key that calls one smaller `switch` per bucket (see [The cost](#the-cost)).
-- `ResolveLanguage` is a loop with `string.Equals` checks, with the aliases written into the method.
-- `Languages`, `Keys` and `GetAllStrings` build a new array or list on every call instead of returning a cached static one.
-- The run-time formatter behind `LanguageStrings.Format` is a set of static methods without static fields.
+There is one `StringsData` method per translation file, with one entry per key index (`null` when the file lacks the key), and `ParameterNamesData` with the placeholder names per key. Each array is cached on first use:
 
-When a text changes, only these bodies change, and hot reload can replace them.
+```csharp
+private static string?[] Strings0() => s_strings0 ??= StringsData0();
+```
+
+The cache is a static field without initializer and the class has no static constructor. Two threads that start at the same time can both build an array. That is harmless, because the result is the same.
+
+- `Language`, `LocalizedLanguage` and the group structs call `LanguageStrings.Translate` with the index of the key. The key is written in a comment next to the index.
+- `LanguageStrings` finds the index of a key with a dictionary that is built from `KeysData` on first use, and reads the text from the array of the language.
+- `ResolveLanguage` is a loop with `string.Equals` checks, with the aliases written into the method.
+- `Languages`, `Keys` and `GetAllStrings` build a new array or list on every call.
+- The run-time formatter behind `LanguageStrings.Format` and `Translate` is a set of static methods without static fields.
+
+### Clearing the caches
+
+When a text changes, only the data methods change, and hot reload can replace them. Methods that were already called keep their cached array, though. So the generator also emits:
+
+```csharp
+[assembly: global::System.Reflection.Metadata.MetadataUpdateHandler(typeof(global::MyApp.Localization.LanguageStrings))]
+
+internal static void ClearCache(global::System.Type[]? updatedTypes)
+```
+
+After an update, the runtime calls `ClearCache` on the handler type. It sets every cache field to `null`, so the next lookup builds the arrays again from the edited methods.
+
+The attribute is only emitted when the project compiles against `System.Reflection.Metadata.MetadataUpdateHandlerAttribute` (.NET 6 and later). The generator checks this against the compilation, separately from the translation files, so editing a translation does not run the check again. Without the type, for example on .NET Framework or .NET Standard, `ClearCache` is still emitted, but nothing calls it.
+
+### Limitation
+
+The caches are only cleared by tools and runtimes that call `MetadataUpdateHandler` handlers. `dotnet watch` and the IDE hot reload on .NET 6 and later do. If a tool applies the edit without calling the handler, the app keeps returning the old texts until it restarts. A project that targets a runtime without the attribute type has the same limitation.
 
 ## The cost
 
 - The listing members allocate on every call. They are meant for occasional use (export, a locale endpoint, a language picker). Cache the result yourself if you need it often.
 - `Language` resolves the language on every member access. Resolution is a few string comparisons without allocation.
+- The arrays are built on first use, which takes time proportional to the number of keys. The first lookup after start or after a hot reload edit pays for it.
+- The arrays and the key dictionary stay in memory after the first use.
 
-The C# compiler turns a `switch` over many string constants into a hash or length based lookup rather than a sequence of comparisons, so lookups by key stay fast with many keys. The compile time of such a `switch` grows with the square of its number of arms, though: one `switch` with 4,600 keys takes the compiler about 6 seconds. So a lookup with more than 256 keys is split into buckets by a 32-bit FNV-1a hash of the key, with on average at most 64 keys per bucket. Each bucket is its own method, so this is still hot-reload friendly. With 4,600 keys in three languages, this cut the compile time of the generated code from about 25 to 2 seconds, and a lookup takes about the same time or less.
+Earlier versions emitted one `switch` over the keys per language and one `switch` per key over the languages. The compile time of a `switch` over string constants grows with the square of its number of arms, so large translation sets needed a hash-bucket workaround. An array initializer is compiled in time proportional to its length, so the generated code needs no workaround for large sets.
 
 ## What still needs a restart
 

@@ -68,6 +68,7 @@ internal static class TranslationGeneratorTrackingNames
     public const string ModelSetDiagnostics = nameof(ModelSetDiagnostics);
     public const string LanguageKeysModel = nameof(LanguageKeysModel);
     public const string StringLocalizerSupport = nameof(StringLocalizerSupport);
+    public const string MetadataUpdateHandlerSupport = nameof(MetadataUpdateHandlerSupport);
     public const string GeneratedNamespace = nameof(GeneratedNamespace);
 }
 
@@ -879,12 +880,6 @@ internal static class TranslationGeneratorUtilities
 {
     public const string DefaultCountParameter = "count";
 
-    /// <summary>Name of the parameter that carries the format provider in the generated translation methods.</summary>
-    public const string FormatProviderParameter = "__provider";
-
-    /// <summary>Name of the parameter that carries the resolved language in the generated translation methods.</summary>
-    public const string LanguageParameter = "__language";
-
     public const string TranslationMetadataKey = "build_metadata.AdditionalFiles.I18NTranslation";
 
     public static bool IsMarkedAsTranslation(AnalyzerConfigOptionsProvider optionsProvider, AdditionalText file) =>
@@ -1087,71 +1082,6 @@ internal static class TranslationGeneratorUtilities
 
     public static string[] SplitPluralParts(string value) => TranslationMessageSyntax.SplitPlural(value);
 
-    public static bool TryCreateFormatExpression(
-        string value,
-        string[] parameterNames,
-        out string expression,
-        string providerParameter = FormatProviderParameter)
-    {
-        value ??= string.Empty;
-
-        // Literals ({'text'}) become plain text. Text is escaped for string.Format, unless the message
-        // has no placeholders and is emitted as a plain string.
-        var formatBuilder = new StringBuilder();
-        var plainBuilder = new StringBuilder();
-        var hasPlaceholder = false;
-        foreach (var token in TranslationMessageSyntax.Tokenize(value))
-        {
-            switch (token.Kind)
-            {
-                case MessageTokenKind.Placeholder:
-                    var parameterIndex = Array.IndexOf(parameterNames, token.Text);
-                    if (parameterIndex < 0)
-                    {
-                        expression = string.Empty;
-                        return false;
-                    }
-
-                    formatBuilder.Append('{').Append(parameterIndex);
-                    if (token.Format is not null)
-                    {
-                        // A format specifier such as {date:d} is passed through to string.Format.
-                        formatBuilder.Append(':').Append(token.Format);
-                    }
-
-                    formatBuilder.Append('}');
-                    hasPlaceholder = true;
-                    break;
-                case MessageTokenKind.Literal:
-                    AppendEscapedFormatText(formatBuilder, token.Text);
-                    plainBuilder.Append(token.Text);
-                    break;
-                default:
-                    var text = value.Substring(token.Start, token.Length);
-                    AppendEscapedFormatText(formatBuilder, text);
-                    plainBuilder.Append(text);
-                    break;
-            }
-        }
-
-        if (!hasPlaceholder)
-        {
-            expression = ToCSharpStringLiteral(plainBuilder.ToString());
-            return true;
-        }
-
-        var literal = ToCSharpStringLiteral(formatBuilder.ToString());
-        var expressionBuilder = new StringBuilder("string.Format(" + providerParameter + ", ", literal.Length + 96);
-        expressionBuilder.Append(literal);
-        foreach (var identifier in GetParameterIdentifiers(parameterNames))
-        {
-            expressionBuilder.Append(", ").Append(identifier);
-        }
-
-        expression = expressionBuilder.Append(')').ToString();
-        return true;
-    }
-
     public static string[] GetUnsupportedPlaceholders(string value, string[] parameterNames)
     {
         var unsupported = new List<string>();
@@ -1168,21 +1098,6 @@ internal static class TranslationGeneratorUtilities
         }
 
         return unsupported.ToArray();
-    }
-
-    private static void AppendEscapedFormatText(StringBuilder builder, string segment)
-    {
-        foreach (var character in segment)
-        {
-            if (character == '{' || character == '}')
-            {
-                builder.Append(character).Append(character);
-            }
-            else
-            {
-                builder.Append(character);
-            }
-        }
     }
 }
 

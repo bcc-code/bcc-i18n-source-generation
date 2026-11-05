@@ -97,6 +97,18 @@ internal static class GeneratedFile
         string generatedNamespace,
         string className,
         string? declaration = null,
+        params string[] extraAttributes) =>
+        BeginWithAssemblyAttribute(null, generatedNamespace, className, declaration, extraAttributes);
+
+    /// <summary>
+    /// Like <see cref="Begin"/>, with an assembly attribute (such as <c>[assembly: ...]</c>) before the namespace, where the
+    /// language requires it. Null writes no attribute.
+    /// </summary>
+    public static IndentedWriter BeginWithAssemblyAttribute(
+        string? assemblyAttribute,
+        string generatedNamespace,
+        string className,
+        string? declaration = null,
         params string[] extraAttributes)
     {
         var writer = new IndentedWriter();
@@ -104,6 +116,12 @@ internal static class GeneratedFile
         writer.AppendLine("#nullable enable");
         writer.AppendLine("#pragma warning disable CS8981 // The type name only contains lower-cased ascii characters. Such names may become reserved for the language.");
         writer.AppendLine();
+
+        if (assemblyAttribute is not null)
+        {
+            writer.AppendLine(assemblyAttribute);
+            writer.AppendLine();
+        }
 
         if (!string.IsNullOrWhiteSpace(generatedNamespace))
         {

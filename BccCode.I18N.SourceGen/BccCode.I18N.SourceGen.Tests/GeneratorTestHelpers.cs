@@ -21,10 +21,17 @@ internal static class GeneratorTestHelpers
         bool trackIncrementalSteps = false,
         string? languageAliases = null,
         bool referenceLocalization = false,
-        IEnumerable<string>? extraSources = null)
+        IEnumerable<string>? extraSources = null,
+        Func<CSharpCompilation, CSharpCompilation>? configureCompilation = null,
+        string? generatedNamespace = null)
     {
         var compilation = CreateCompilation(referenceLocalization, extraSources);
-        var driver = CreateDriver(generator, additionalFiles, fallbackLanguage, trackIncrementalSteps, languageAliases);
+        if (configureCompilation is not null)
+        {
+            compilation = configureCompilation(compilation);
+        }
+
+        var driver = CreateDriver(generator, additionalFiles, fallbackLanguage, trackIncrementalSteps, languageAliases, generatedNamespace);
         driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
         return (driver, driver.GetRunResult(), outputCompilation);
     }
@@ -66,7 +73,8 @@ internal static class GeneratorTestHelpers
         IEnumerable<TestAdditionalFile> additionalFiles,
         string? fallbackLanguage,
         bool trackIncrementalSteps,
-        string? languageAliases = null)
+        string? languageAliases = null,
+        string? generatedNamespace = null)
     {
         var sourceGenerator = generator.AsSourceGenerator();
         var driverOptions = new GeneratorDriverOptions(
@@ -77,7 +85,7 @@ internal static class GeneratorTestHelpers
             generators: ImmutableArray.Create(sourceGenerator),
             additionalTexts: additionalFiles.ToImmutableArray<AdditionalText>(),
             parseOptions: CSharpParseOptions.Default,
-            optionsProvider: new TestAnalyzerConfigOptionsProvider(fallbackLanguage, languageAliases),
+            optionsProvider: new TestAnalyzerConfigOptionsProvider(fallbackLanguage, languageAliases, generatedNamespace),
             driverOptions: driverOptions);
     }
 
@@ -113,7 +121,7 @@ internal static class GeneratorTestHelpers
         private readonly TestAnalyzerConfigOptions _globalOptions;
         private readonly Dictionary<string, string> _globalValues;
 
-        public TestAnalyzerConfigOptionsProvider(string? fallbackLanguage, string? languageAliases)
+        public TestAnalyzerConfigOptionsProvider(string? fallbackLanguage, string? languageAliases, string? generatedNamespace)
         {
             var options = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             if (!string.IsNullOrWhiteSpace(fallbackLanguage))
@@ -126,7 +134,7 @@ internal static class GeneratorTestHelpers
                 options["build_property.I18NLanguageAliases"] = languageAliases;
             }
 
-            options["build_property.GeneratedNamespace"] = "BccCode.I18N.Tests.Generated";
+            options["build_property.GeneratedNamespace"] = generatedNamespace ?? "BccCode.I18N.Tests.Generated";
 
             _globalValues = options;
             _globalOptions = new TestAnalyzerConfigOptions(options);
