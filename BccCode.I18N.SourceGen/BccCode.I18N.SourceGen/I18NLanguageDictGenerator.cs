@@ -68,14 +68,18 @@ internal static class I18NLanguageDictGenerator
         WriteListings(writer, orderedFiles, fallbackLanguage, translations.FallbackFile);
 
         writer.AppendLine();
-        WriteFormat(writer, orderedFiles, translations.FallbackFile);
+        var usesKeyHash = WriteFormat(writer, orderedFiles, translations.FallbackFile);
 
         for (var index = 0; index < orderedFiles.Length; index++)
         {
             writer.AppendLine();
-            WriteLookupMethod(writer, GetLookupMethodName(index), orderedFiles[index]);
+            usesKeyHash |= WriteLookupMethod(writer, GetLookupMethodName(index), orderedFiles[index]);
+        }
+
+        if (usesKeyHash)
+        {
             writer.AppendLine();
-            WriteAllStringsMethod(writer, GetAllStringsMethodName(index), orderedFiles[index]);
+            WriteKeyHashMethod(writer);
         }
     }
 
@@ -115,7 +119,7 @@ internal static class I18NLanguageDictGenerator
             writer.Append("if (string.Equals(language, ").Append(TranslationGeneratorUtilities.ToCSharpStringLiteral(orderedFiles[index].Language))
                 .AppendLine(", global::System.StringComparison.OrdinalIgnoreCase))");
             writer.OpenBlock();
-            writer.Append("return ").Append(GetAllStringsMethodName(index)).AppendLine("();");
+            writer.Append("return CollectStrings(").Append(GetLookupMethodName(index)).AppendLine(");");
             writer.CloseBlock();
         }
 
@@ -154,6 +158,44 @@ internal static class I18NLanguageDictGenerator
         writer.CloseBlock();
         writer.AppendLine("return result;");
         writer.CloseBlock();
+        writer.AppendLine();
+
+        // GetAllStrings is built from the lookup methods rather than from one array of pairs per language. Those
+        // arrays doubled the stored strings and took the compiler about half a second for 4,600 keys in three languages.
+        // The keys of all files, in ordinal order, are the fallback keys unless another file has keys the fallback lacks.
+        var fallbackKeys = new HashSet<string>(fallbackFile.Entries.Select(static entry => entry.KeyPath), StringComparer.Ordinal);
+        var otherKeys = orderedFiles
+            .SelectMany(static file => file.Entries)
+            .Select(static entry => entry.KeyPath)
+            .Where(key => !fallbackKeys.Contains(key))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        writer.Append("private static global::System.Collections.Generic.List<").Append(StringPair)
+            .AppendLine("> CollectStrings(global::System.Func<string, string?> lookup)");
+        writer.OpenBlock();
+        writer.Append("global::System.Collections.Generic.IReadOnlyList<string> keys = ").Append(otherKeys.Length == 0 ? "Keys" : "AllKeyPaths()").AppendLine(";");
+        writer.Append("var result = new global::System.Collections.Generic.List<").Append(StringPair).AppendLine(">();");
+        writer.AppendLine("for (var index = 0; index < keys.Count; index++)");
+        writer.OpenBlock();
+        writer.AppendLine("var value = lookup(keys[index]);");
+        writer.AppendLine("if (value != null)");
+        writer.OpenBlock();
+        writer.Append("result.Add(new ").Append(StringPair).AppendLine("(keys[index], value));");
+        writer.CloseBlock();
+        writer.CloseBlock();
+        writer.AppendLine();
+        writer.AppendLine("return result;");
+        writer.CloseBlock();
+
+        if (otherKeys.Length > 0)
+        {
+            writer.AppendLine();
+            writer.AppendLine("private static string[] AllKeyPaths() =>");
+            writer.Indent();
+            WriteStringArray(writer, fallbackKeys.Concat(otherKeys).OrderBy(static key => key, StringComparer.Ordinal));
+            writer.Outdent();
+        }
     }
 
     private static void WriteStringArray(IndentedWriter writer, IEnumerable<string> values)
@@ -168,26 +210,10 @@ internal static class I18NLanguageDictGenerator
         writer.CloseBlock(";");
     }
 
-    private static void WriteAllStringsMethod(IndentedWriter writer, string methodName, LanguageFileModel file)
-    {
-        writer.Append("private static ").Append(StringPair).Append("[] ").Append(methodName).AppendLine("() =>");
-        writer.Indent();
-        writer.Append("new ").Append(StringPair).AppendLine("[]");
-        writer.OpenBlock();
-        foreach (var entry in DistinctByKeyPath(file.Entries).OrderBy(static entry => entry.KeyPath, StringComparer.Ordinal))
-        {
-            writer.Append("new ").Append(StringPair).Append('(')
-                .Append(TranslationGeneratorUtilities.ToCSharpStringLiteral(entry.KeyPath)).Append(", ")
-                .Append(TranslationGeneratorUtilities.ToCSharpStringLiteral(entry.Value)).AppendLine("),");
-        }
-
-        writer.CloseBlock(";");
-        writer.Outdent();
-    }
-
     // Format: positional formatting of a stored message. The parameter names come from the same code as the
     // parameters of the Language members, so the order of the arguments is the same.
-    private static void WriteFormat(IndentedWriter writer, LanguageFileModel[] orderedFiles, LanguageFileModel fallbackFile)
+    // Returns whether the written members use GetKeyHash.
+    private static bool WriteFormat(IndentedWriter writer, LanguageFileModel[] orderedFiles, LanguageFileModel fallbackFile)
     {
         writer.AppendLine("/// <summary>");
         writer.AppendLine("/// Formats the stored message of <paramref name=\"key\"/> in the language of the current UI culture. The arguments match the");
@@ -221,10 +247,7 @@ internal static class I18NLanguageDictGenerator
             }
         }
 
-        writer.AppendLine("private static string[]? GetParameterNames(string key) =>");
-        writer.Indent();
-        writer.AppendLine("key switch");
-        writer.OpenBlock();
+        var parameterArms = new List<KeyValuePair<string, string>>();
         foreach (var entry in DistinctByKeyPath(fallbackFile.Entries).OrderBy(static entry => entry.KeyPath, StringComparer.Ordinal))
         {
             var parameters = TranslationGeneratorUtilities.GetKeyParameters(entry.Value, valuesByKey[entry.KeyPath], out _);
@@ -233,13 +256,12 @@ internal static class I18NLanguageDictGenerator
                 continue;
             }
 
-            writer.Append(TranslationGeneratorUtilities.ToCSharpStringLiteral(entry.KeyPath)).Append(" => new string[] { ")
-                .Append(string.Join(", ", parameters.Select(TranslationGeneratorUtilities.ToCSharpStringLiteral))).AppendLine(" },");
+            parameterArms.Add(new KeyValuePair<string, string>(
+                entry.KeyPath,
+                "new string[] { " + string.Join(", ", parameters.Select(TranslationGeneratorUtilities.ToCSharpStringLiteral)) + " }"));
         }
 
-        writer.AppendLine("_ => null,");
-        writer.CloseBlock(";");
-        writer.Outdent();
+        var usesKeyHash = WriteKeySwitchMethod(writer, "string[]?", "GetParameterNames", parameterArms, "null");
         writer.AppendLine();
 
         // A language whose message uses placeholders that the key does not have is skipped as a whole by the
@@ -299,9 +321,10 @@ internal static class I18NLanguageDictGenerator
                 writer.AppendLine(line);
             }
         }
+
+        return usesKeyHash;
     }
 
-    private static string GetAllStringsMethodName(int index) => "GetAllStrings" + index;
 
     // Walks the culture and its parents (nb-NO, nb, ...) and returns the first translation file language that
     // matches a culture name, or that a culture name is aliased to. Names are compared without allocating.
@@ -351,23 +374,146 @@ internal static class I18NLanguageDictGenerator
         writer.CloseBlock();
     }
 
-    private static void WriteLookupMethod(IndentedWriter writer, string methodName, LanguageFileModel file)
+    private static bool WriteLookupMethod(IndentedWriter writer, string methodName, LanguageFileModel file)
     {
         writer.Append("// ").AppendLine(TranslationGeneratorUtilities.ToCSharpStringLiteral(file.Language));
-        writer.Append("private static string? ").Append(methodName).AppendLine("(string key) =>");
+        var arms = DistinctByKeyPath(file.Entries)
+            .Select(static entry => new KeyValuePair<string, string>(entry.KeyPath, TranslationGeneratorUtilities.ToCSharpStringLiteral(entry.Value)))
+            .ToList();
+        return WriteKeySwitchMethod(writer, "string?", methodName, arms, "null");
+    }
+
+    // The time the C# compiler spends on a switch over string constants grows with the square of the number
+    // of arms: 4,600 arms take it about 6 seconds, on a single thread. A switch with more arms than this is
+    // split into buckets by a hash of the key, with one small switch per bucket. This keeps the members as
+    // method bodies (no static data), so hot reload can still update them.
+    internal const int MaxArmsPerKeySwitch = 256;
+    private const int TargetArmsPerBucket = 64;
+    private const string KeyHashMethod = "GetKeyHash";
+
+    /// <summary>
+    /// Writes <c>private static {returnType} {methodName}(string key)</c> that maps each key to the expression of its
+    /// arm, and other keys to <paramref name="defaultExpression"/>. Returns whether the method uses <c>GetKeyHash</c>.
+    /// </summary>
+    private static bool WriteKeySwitchMethod(
+        IndentedWriter writer,
+        string returnType,
+        string methodName,
+        IReadOnlyList<KeyValuePair<string, string>> arms,
+        string defaultExpression)
+    {
+        if (arms.Count <= MaxArmsPerKeySwitch)
+        {
+            WriteSingleKeySwitch(writer, returnType, methodName, arms, defaultExpression);
+            return false;
+        }
+
+        var bucketCount = GetBucketCount(arms.Count);
+        var buckets = new List<KeyValuePair<string, string>>?[bucketCount];
+        foreach (var arm in arms)
+        {
+            var bucket = (int)(ComputeKeyHash(arm.Key) & (uint)(bucketCount - 1));
+            (buckets[bucket] ??= new List<KeyValuePair<string, string>>()).Add(arm);
+        }
+
+        writer.Append("private static ").Append(returnType).Append(' ').Append(methodName).AppendLine("(string key) =>");
+        writer.Indent();
+        writer.Append('(').Append(KeyHashMethod).Append("(key) & ").Append(ToInvariant(bucketCount - 1)).AppendLine("u) switch");
+        writer.OpenBlock();
+        for (var bucket = 0; bucket < bucketCount; bucket++)
+        {
+            if (buckets[bucket] is not null)
+            {
+                writer.Append(ToInvariant(bucket)).Append("u => ").Append(GetBucketMethodName(methodName, bucket)).AppendLine("(key),");
+            }
+        }
+
+        writer.Append("_ => ").Append(defaultExpression).AppendLine(",");
+        writer.CloseBlock(";");
+        writer.Outdent();
+
+        for (var bucket = 0; bucket < bucketCount; bucket++)
+        {
+            if (buckets[bucket] is { } bucketArms)
+            {
+                writer.AppendLine();
+                WriteSingleKeySwitch(writer, returnType, GetBucketMethodName(methodName, bucket), bucketArms, defaultExpression);
+            }
+        }
+
+        return true;
+    }
+
+    private static void WriteSingleKeySwitch(
+        IndentedWriter writer,
+        string returnType,
+        string methodName,
+        IReadOnlyList<KeyValuePair<string, string>> arms,
+        string defaultExpression)
+    {
+        writer.Append("private static ").Append(returnType).Append(' ').Append(methodName).AppendLine("(string key) =>");
         writer.Indent();
         writer.AppendLine("key switch");
         writer.OpenBlock();
-
-        foreach (var entry in DistinctByKeyPath(file.Entries))
+        foreach (var arm in arms)
         {
-            writer.Append(TranslationGeneratorUtilities.ToCSharpStringLiteral(entry.KeyPath))
-                .Append(" => ").Append(TranslationGeneratorUtilities.ToCSharpStringLiteral(entry.Value)).AppendLine(",");
+            writer.Append(TranslationGeneratorUtilities.ToCSharpStringLiteral(arm.Key)).Append(" => ").Append(arm.Value).AppendLine(",");
         }
 
-        writer.AppendLine("_ => null,");
+        writer.Append("_ => ").Append(defaultExpression).AppendLine(",");
         writer.CloseBlock(";");
         writer.Outdent();
+    }
+
+    // The smallest power of two that gives at most TargetArmsPerBucket arms per bucket on average.
+    internal static int GetBucketCount(int armCount)
+    {
+        var bucketCount = 1;
+        while (bucketCount * TargetArmsPerBucket < armCount)
+        {
+            bucketCount *= 2;
+        }
+
+        return bucketCount;
+    }
+
+    private static string GetBucketMethodName(string methodName, int bucket) => methodName + "_" + ToInvariant(bucket);
+
+    private static string ToInvariant(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>FNV-1a over the UTF-16 code units of <paramref name="key"/>. Must match the generated <c>GetKeyHash</c>.</summary>
+    internal static uint ComputeKeyHash(string key)
+    {
+        unchecked
+        {
+            var hash = 2166136261u;
+            foreach (var character in key)
+            {
+                hash = (hash ^ character) * 16777619u;
+            }
+
+            return hash;
+        }
+    }
+
+    private static void WriteKeyHashMethod(IndentedWriter writer)
+    {
+        writer.AppendLine("// FNV-1a over the UTF-16 code units. The generator uses the same hash to place each key in a bucket.");
+        writer.Append("private static uint ").Append(KeyHashMethod).AppendLine("(string key)");
+        writer.OpenBlock();
+        writer.AppendLine("var hash = 2166136261u;");
+        writer.AppendLine("if (key is null)");
+        writer.OpenBlock();
+        writer.AppendLine("return hash;");
+        writer.CloseBlock();
+        writer.AppendLine();
+        writer.AppendLine("for (var index = 0; index < key.Length; index++)");
+        writer.OpenBlock();
+        writer.AppendLine("hash = unchecked((hash ^ key[index]) * 16777619u);");
+        writer.CloseBlock();
+        writer.AppendLine();
+        writer.AppendLine("return hash;");
+        writer.CloseBlock();
     }
 
     // Duplicate key paths (e.g. a JSON property repeated, or "a.b" next to { "a": { "b" } }) would be
