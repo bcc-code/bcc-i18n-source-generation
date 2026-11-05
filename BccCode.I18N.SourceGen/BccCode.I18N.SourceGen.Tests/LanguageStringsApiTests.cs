@@ -71,6 +71,25 @@ public class LanguageStringsApiTests
   }
 
   [Fact]
+  public void GetAllStrings_includes_keys_the_fallback_lacks_in_ordinal_order_with_the_last_duplicate()
+  {
+    TestAdditionalFile[] files =
+    [
+        new TestAdditionalFile("./en.json", """{ "b": "B", "d": "D" }"""),
+        new TestAdditionalFile("./no.json", """{ "d": "D1", "c": "C", "a": { "x": "AX" }, "d": "D2", "B": "upper" }""")
+    ];
+
+    var result = LocalizedLanguageTests.Run(
+        files,
+        """
+        return string.Join(",", LanguageStrings.GetAllStrings("no").Select(p => p.Key + "=" + p.Value)) + "|" +
+            string.Join(",", LanguageStrings.GetAllStrings("en").Select(p => p.Key + "=" + p.Value));
+        """);
+
+    Assert.Equal("B=upper,a.x=AX,c=C,d=D2|b=B,d=D", result);
+  }
+
+  [Fact]
   public void GetAllStrings_for_a_culture_can_include_the_fallback_language()
   {
     var result = Run(

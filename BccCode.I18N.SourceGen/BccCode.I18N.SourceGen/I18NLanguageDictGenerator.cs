@@ -74,8 +74,6 @@ internal static class I18NLanguageDictGenerator
         {
             writer.AppendLine();
             usesKeyHash |= WriteLookupMethod(writer, GetLookupMethodName(index), orderedFiles[index]);
-            writer.AppendLine();
-            WriteAllStringsMethod(writer, GetAllStringsMethodName(index), orderedFiles[index]);
         }
 
         if (usesKeyHash)
@@ -121,7 +119,7 @@ internal static class I18NLanguageDictGenerator
             writer.Append("if (string.Equals(language, ").Append(TranslationGeneratorUtilities.ToCSharpStringLiteral(orderedFiles[index].Language))
                 .AppendLine(", global::System.StringComparison.OrdinalIgnoreCase))");
             writer.OpenBlock();
-            writer.Append("return ").Append(GetAllStringsMethodName(index)).AppendLine("();");
+            writer.Append("return CollectStrings(").Append(GetLookupMethodName(index)).AppendLine(");");
             writer.CloseBlock();
         }
 
@@ -160,6 +158,44 @@ internal static class I18NLanguageDictGenerator
         writer.CloseBlock();
         writer.AppendLine("return result;");
         writer.CloseBlock();
+        writer.AppendLine();
+
+        // GetAllStrings is built from the lookup methods rather than from one array of pairs per language. Those
+        // arrays doubled the stored strings and took the compiler about half a second for 4,600 keys in three languages.
+        // The keys of all files, in ordinal order, are the fallback keys unless another file has keys the fallback lacks.
+        var fallbackKeys = new HashSet<string>(fallbackFile.Entries.Select(static entry => entry.KeyPath), StringComparer.Ordinal);
+        var otherKeys = orderedFiles
+            .SelectMany(static file => file.Entries)
+            .Select(static entry => entry.KeyPath)
+            .Where(key => !fallbackKeys.Contains(key))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        writer.Append("private static global::System.Collections.Generic.List<").Append(StringPair)
+            .AppendLine("> CollectStrings(global::System.Func<string, string?> lookup)");
+        writer.OpenBlock();
+        writer.Append("global::System.Collections.Generic.IReadOnlyList<string> keys = ").Append(otherKeys.Length == 0 ? "Keys" : "AllKeyPaths()").AppendLine(";");
+        writer.Append("var result = new global::System.Collections.Generic.List<").Append(StringPair).AppendLine(">();");
+        writer.AppendLine("for (var index = 0; index < keys.Count; index++)");
+        writer.OpenBlock();
+        writer.AppendLine("var value = lookup(keys[index]);");
+        writer.AppendLine("if (value != null)");
+        writer.OpenBlock();
+        writer.Append("result.Add(new ").Append(StringPair).AppendLine("(keys[index], value));");
+        writer.CloseBlock();
+        writer.CloseBlock();
+        writer.AppendLine();
+        writer.AppendLine("return result;");
+        writer.CloseBlock();
+
+        if (otherKeys.Length > 0)
+        {
+            writer.AppendLine();
+            writer.AppendLine("private static string[] AllKeyPaths() =>");
+            writer.Indent();
+            WriteStringArray(writer, fallbackKeys.Concat(otherKeys).OrderBy(static key => key, StringComparer.Ordinal));
+            writer.Outdent();
+        }
     }
 
     private static void WriteStringArray(IndentedWriter writer, IEnumerable<string> values)
@@ -172,23 +208,6 @@ internal static class I18NLanguageDictGenerator
         }
 
         writer.CloseBlock(";");
-    }
-
-    private static void WriteAllStringsMethod(IndentedWriter writer, string methodName, LanguageFileModel file)
-    {
-        writer.Append("private static ").Append(StringPair).Append("[] ").Append(methodName).AppendLine("() =>");
-        writer.Indent();
-        writer.Append("new ").Append(StringPair).AppendLine("[]");
-        writer.OpenBlock();
-        foreach (var entry in DistinctByKeyPath(file.Entries).OrderBy(static entry => entry.KeyPath, StringComparer.Ordinal))
-        {
-            writer.Append("new ").Append(StringPair).Append('(')
-                .Append(TranslationGeneratorUtilities.ToCSharpStringLiteral(entry.KeyPath)).Append(", ")
-                .Append(TranslationGeneratorUtilities.ToCSharpStringLiteral(entry.Value)).AppendLine("),");
-        }
-
-        writer.CloseBlock(";");
-        writer.Outdent();
     }
 
     // Format: positional formatting of a stored message. The parameter names come from the same code as the
@@ -306,7 +325,6 @@ internal static class I18NLanguageDictGenerator
         return usesKeyHash;
     }
 
-    private static string GetAllStringsMethodName(int index) => "GetAllStrings" + index;
 
     // Walks the culture and its parents (nb-NO, nb, ...) and returns the first translation file language that
     // matches a culture name, or that a culture name is aliased to. Names are compared without allocating.
