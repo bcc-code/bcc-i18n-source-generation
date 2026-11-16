@@ -15,7 +15,7 @@ The generator reads four MSBuild properties and one item metadata value. The NuG
 
 When `GeneratedNamespace` is empty or whitespace, the generator uses `RootNamespace`. The generator reads both values at compile time, so it sees the final values from the project file, wherever the props file is imported.
 
-- `RootNamespace` is the project name unless the project file sets it. The SDK only replaces spaces in the project name, so the generator replaces every character that is not valid in a C# identifier with `_`, adds a leading `_` to a segment that starts with a digit or another character that cannot start an identifier, and escapes a segment that is a C# keyword with `@`. A project named `My-App` gets `My_App`.
+- `RootNamespace` is the project name unless the project file sets it. The SDK only replaces spaces in the project name, so the generator replaces every character that is not valid in a C# identifier with `_`, adds a leading `_` to a segment that starts with a digit or another character that cannot start an identifier, and escapes a segment that is a C# keyword (contextual ones included) with `@`. A project named `My-App` gets `My_App`.
 - `GeneratedNamespace` is used as written.
 - If both are empty, the types are in the global namespace.
 

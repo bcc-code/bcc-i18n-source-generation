@@ -3,6 +3,7 @@
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <IsPackable>false</IsPackable>
         <!-- Same namespace as the linked tests, which check that the generated types default to RootNamespace. -->
         <RootNamespace>BccCode.I18N.SourceGen.IntegrationTests</RootNamespace>

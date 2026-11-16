@@ -35,7 +35,7 @@ Key structure and member names come from the **fallback file**. Keys that exist 
 - Names are made into valid C# identifiers:
   - A character that is not valid in an identifier becomes `_` (`my-key` → `my_key`).
   - A name that does not start with a letter or `_` gets a `_` prefix (`1st` → `_1st`).
-  - A C# keyword gets an `@` prefix (`class` → `@class`).
+  - A C# keyword, contextual ones included, gets an `@` prefix (`class` → `@class`, `record` → `@record`). The name stays the same for callers: `Language.references.record.title` compiles.
 - Members are emitted in ordinal order of their names.
 - Each member has an XML doc comment with the fallback text, after linked messages are resolved.
 
