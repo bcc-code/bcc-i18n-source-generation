@@ -5,6 +5,7 @@
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <IsPackable>false</IsPackable>
         <RootNamespace>BccCode.I18N.SourceGen.IntegrationTests</RootNamespace>
         <FallbackLanguage>en</FallbackLanguage>

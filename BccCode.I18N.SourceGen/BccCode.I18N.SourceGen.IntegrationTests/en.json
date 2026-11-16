@@ -11,5 +11,12 @@
         "car": "car | cars",
         "item": "item",
         "apple": "no apples | one apple | {count} apples"
+    },
+    "keywords": {
+        "record": { "required": "record" },
+        "file": "file",
+        "scoped": "scoped",
+        "extension": "extension",
+        "field": "field"
     }
 }

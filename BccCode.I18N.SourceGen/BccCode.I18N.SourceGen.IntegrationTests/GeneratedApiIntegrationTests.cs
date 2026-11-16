@@ -28,6 +28,17 @@ public class GeneratedApiIntegrationTests
     }
 
     [Fact]
+    public void Keys_named_after_contextual_keywords_keep_their_names()
+    {
+        CultureInfo.CurrentUICulture = new CultureInfo("en");
+
+        Assert.Equal("record", Language.keywords.record.required);
+        Assert.Equal("file", Language.keywords.file);
+        Assert.Equal("keywords.record.required", LanguageKeys.keywords.record.required);
+        Assert.Equal("fil", new LocalizedLanguage(new CultureInfo("no")).keywords.file);
+    }
+
+    [Fact]
     public void Generated_api_pluralizes_when_only_some_languages_have_plural_forms()
     {
         CultureInfo.CurrentUICulture = new CultureInfo("no");

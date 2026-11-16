@@ -910,7 +910,7 @@ internal static class TranslationGeneratorUtilities
             builder.Append('_');
         }
 
-        if (SyntaxFacts.GetKeywordKind(name) != SyntaxKind.None)
+        if (IsKeyword(name))
         {
             builder.Append('@');
         }
@@ -922,6 +922,15 @@ internal static class TranslationGeneratorUtilities
 
         return builder.ToString();
     }
+
+    // Contextual keywords are escaped too: as type names some are errors or warnings (record, file, required, scoped),
+    // and some are read as modifiers in member declarations. The extra names are newer than the Roslyn this generator builds against.
+    private static readonly HashSet<string> NewerContextualKeywords = new(StringComparer.Ordinal) { "extension", "field" };
+
+    private static bool IsKeyword(string name) =>
+        SyntaxFacts.GetKeywordKind(name) != SyntaxKind.None
+        || SyntaxFacts.GetContextualKeywordKind(name) != SyntaxKind.None
+        || NewerContextualKeywords.Contains(name);
 
     public static string EscapeXmlDoc(string text)
     {

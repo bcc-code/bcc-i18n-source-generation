@@ -519,6 +519,48 @@ public class SourceGeneratorWithAdditionalFilesTests
     Assert.Contains(", new object?[] { _1st, _1st2 });", languageSource, StringComparison.Ordinal);
   }
 
+  [Theory]
+  [InlineData("record")]
+  [InlineData("file")]
+  [InlineData("required")]
+  [InlineData("scoped")]
+  [InlineData("extension")]
+  [InlineData("var")]
+  [InlineData("dynamic")]
+  [InlineData("nint")]
+  [InlineData("value")]
+  [InlineData("async")]
+  [InlineData("await")]
+  [InlineData("nameof")]
+  [InlineData("partial")]
+  [InlineData("field")]
+  public void Keys_named_after_contextual_keywords_compile_without_warnings(string keyword)
+  {
+    var json = $$"""{ "{{keyword}}": { "inner": { "{{keyword}}": "a" } }, "group": { "{{keyword}}": "b" } }""";
+    var caller = $$"""
+                   using BccCode.I18N.Tests.Generated;
+                   public static class Caller
+                   {
+                       public static string[] All(System.Globalization.CultureInfo culture) =>
+                       [
+                           Language.{{keyword}}.inner.{{keyword}},
+                           Language.group.{{keyword}},
+                           LanguageKeys.{{keyword}}.inner.{{keyword}},
+                           new LocalizedLanguage(culture).{{keyword}}.inner.{{keyword}},
+                       ];
+                   }
+                   """;
+
+    var (_, runResult, outputCompilation) = GeneratorTestHelpers.RunGenerator(
+        new I18NSourceGenerator(),
+        [new TestAdditionalFile("./en.json", json), new TestAdditionalFile("./no.json", json)],
+        fallbackLanguage: "en",
+        extraSources: [caller]);
+
+    Assert.Empty(GeneratorTestHelpers.GetGeneratorDiagnostics(runResult));
+    Assert.Empty(outputCompilation.GetDiagnostics().Where(static diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning));
+  }
+
   [Fact]
   public void Placeholder_mismatch_warning_points_at_the_translation_file()
   {
